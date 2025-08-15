@@ -3,7 +3,8 @@ openai:
   api_key: "sk-a83be43ee33544f186e5fd7b5dab2ca8"
 #  base_url: "https://api.openai.com/v1"
   base_url: "https://api.deepseek.com"
-  model: "gpt-4o-mini"
+#  model: "gpt-4o-mini"
+  model: "deepseek-chat"
   temperature: 0.2
   timeout_seconds: 60
 
