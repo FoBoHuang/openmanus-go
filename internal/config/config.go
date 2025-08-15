@@ -1,4 +1,3 @@
-
 package config
 
 import (
@@ -21,36 +20,44 @@ type OpenAI struct {
 	TimeoutSeconds int     `mapstructure:"timeout_seconds"`
 }
 
+type OTel struct {
+	ServiceName string `mapstructure:"service_name"`
+	Stdout      bool   `mapstructure:"stdout"`
+}
+
 type Log struct {
 	Level string `mapstructure:"level"`
 }
 
-type Persistence struct { Path string `mapstructure:"path"` }
-
-type Observability struct {
-	EnablePProf   bool `mapstructure:"enable_pprof"`
-	EnableMetrics bool `mapstructure:"enable_metrics"`
-}
-
 type Config struct {
-	OpenAI        OpenAI        `mapstructure:"openai"`
-	Log           Log           `mapstructure:"log"`
-	Persistence   Persistence   `mapstructure:"persistence"`
-	Observability Observability `mapstructure:"observability"`
+	OpenAI OpenAI `mapstructure:"openai"`
+	OTel   OTel   `mapstructure:"otel"`
+	Log    Log    `mapstructure:"log"`
 }
 
 func defaultConfig() *Config {
 	return &Config{
-		OpenAI: OpenAI{ BaseURL: "https://api.openai.com/v1", Model: "gpt-4o-mini", Temperature: 0.2, TimeoutSeconds: 60 },
-		Log: Log{Level: "info"},
-		Persistence: Persistence{Path: "/data/openmanus.db"},
-		Observability: Observability{ EnablePProf: true, EnableMetrics: true },
+		OpenAI: OpenAI{
+			BaseURL:        "https://api.openai.com/v1",
+			Model:          "gpt-4o-mini",
+			Temperature:    0.2,
+			TimeoutSeconds: 60,
+		},
+		OTel: OTel{
+			ServiceName: "openmanus-go",
+			Stdout:      true,
+		},
+		Log: Log{
+			Level: "info",
+		},
 	}
 }
 
 func InitLogger(level string) {
 	lvl, err := zerolog.ParseLevel(strings.ToLower(level))
-	if err != nil { lvl = zerolog.InfoLevel }
+	if err != nil {
+		lvl = zerolog.InfoLevel
+	}
 	zerolog.TimeFieldFormat = time.RFC3339
 	log.Logger = log.Level(lvl).With().Timestamp().Logger()
 }
@@ -72,18 +79,24 @@ func Load() (*Config, error) {
 	v.SetDefault("openai.model", def.OpenAI.Model)
 	v.SetDefault("openai.temperature", def.OpenAI.Temperature)
 	v.SetDefault("openai.timeout_seconds", def.OpenAI.TimeoutSeconds)
+	v.SetDefault("otel.service_name", def.OTel.ServiceName)
+	v.SetDefault("otel.stdout", def.OTel.Stdout)
 	v.SetDefault("log.level", def.Log.Level)
-	v.SetDefault("persistence.path", def.Persistence.Path)
-	v.SetDefault("observability.enable_pprof", def.Observability.EnablePProf)
-	v.SetDefault("observability.enable_metrics", def.Observability.EnableMetrics)
 
 	_ = v.ReadInConfig()
 
 	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil { return nil, fmt.Errorf("unmarshal config: %w", err) }
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
 
-	if key := os.Getenv("OPENAI_API_KEY"); key != "" { cfg.OpenAI.APIKey = key }
-	if key := os.Getenv("OPENMANUS_OPENAI_API_KEY"); key != "" { cfg.OpenAI.APIKey = key }
+	// prefer env key OPENAI_API_KEY
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		cfg.OpenAI.APIKey = key
+	}
+	if key := os.Getenv("OPENMANUS_OPENAI_API_KEY"); key != "" {
+		cfg.OpenAI.APIKey = key
+	}
 
 	InitLogger(cfg.Log.Level)
 	return &cfg, nil

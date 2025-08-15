@@ -5,6 +5,10 @@ openai:
   temperature: 0.2
   timeout_seconds: 60
 
+otel:
+  service_name: "openmanus-go"
+  stdout: true
+
 log:
   level: "info"
 
