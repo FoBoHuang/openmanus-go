@@ -1,0 +1,16 @@
+openai:
+  api_key: ""
+  base_url: "https://api.openai.com/v1"
+  model: "gpt-4o-mini"
+  temperature: 0.2
+  timeout_seconds: 60
+
+log:
+  level: "info"
+
+persistence:
+  path: "/data/openmanus.db"
+
+observability:
+  enable_pprof: true
+  enable_metrics: true

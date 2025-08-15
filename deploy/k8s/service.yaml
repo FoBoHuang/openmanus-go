@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openmanus-go
+  labels:
+    app: openmanus-go
+spec:
+  type: ClusterIP
+  selector:
+    app: openmanus-go
+  ports:
+    - name: http
+      port: 9000
+      targetPort: 9000

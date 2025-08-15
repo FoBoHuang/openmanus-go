@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openmanus-go
+  labels:
+    app: openmanus-go
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openmanus-go
+  template:
+    metadata:
+      labels:
+        app: openmanus-go
+    spec:
+      containers:
+        - name: openmanus
+          image: openmanus-go:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9000
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openmanus-secrets
+                  key: OPENAI_API_KEY
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /app/config
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openmanus-go-pvc
+        - name: config
+          configMap:
+            name: openmanus-config
