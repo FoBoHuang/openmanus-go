@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  # OpenManus-Go 主应用
+  openmanus:
+    build:
+      context: ..
+      dockerfile: deployments/docker/Dockerfile
+    container_name: openmanus-go
+    environment:
+      - OPENMANUS_LLM_API_KEY=${OPENMANUS_LLM_API_KEY}
+      - OPENMANUS_LLM_BASE_URL=${OPENMANUS_LLM_BASE_URL:-https://api.openai.com/v1}
+      - OPENMANUS_LLM_MODEL=${OPENMANUS_LLM_MODEL:-gpt-3.5-turbo}
+      - OPENMANUS_STORAGE_TYPE=redis
+      - OPENMANUS_TOOLS_DATABASE_REDIS_ADDR=redis:6379
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./workspace:/app/workspace
+      - ./config.toml:/app/config.toml:ro
+    depends_on:
+      - redis
+      - mysql
+    networks:
+      - openmanus-net
+    restart: unless-stopped
+
+  # Redis 缓存和存储
+  redis:
+    image: redis:7-alpine
+    container_name: openmanus-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - openmanus-net
+    restart: unless-stopped
+
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: openmanus-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=openmanus
+      - MYSQL_USER=openmanus
+      - MYSQL_PASSWORD=password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - openmanus-net
+    restart: unless-stopped
+
+  # Elasticsearch (可选，用于高级搜索)
+  elasticsearch:
+    image: elasticsearch:8.8.0
+    container_name: openmanus-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    networks:
+      - openmanus-net
+    restart: unless-stopped
+    profiles:
+      - full
+
+  # MinIO (S3 兼容存储)
+  minio:
+    image: minio/minio:latest
+    container_name: openmanus-minio
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - openmanus-net
+    restart: unless-stopped
+    profiles:
+      - full
+
+  # Grafana 监控面板
+  grafana:
+    image: grafana/grafana:latest
+    container_name: openmanus-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - openmanus-net
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Prometheus 指标收集
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: openmanus-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    networks:
+      - openmanus-net
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+volumes:
+  redis_data:
+    driver: local
+  mysql_data:
+    driver: local
+  es_data:
+    driver: local
+  minio_data:
+    driver: local
+  grafana_data:
+    driver: local
+  prometheus_data:
+    driver: local
+
+networks:
+  openmanus-net:
+    driver: bridge

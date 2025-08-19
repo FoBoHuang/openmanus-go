@@ -1,0 +1,69 @@
+# OpenManus-Go Configuration Example
+# Copy this file to config.toml and customize as needed
+
+[llm]
+model = "gpt-3.5-turbo"
+base_url = "https://api.openai.com/v1"
+api_key = "your-api-key-here"  # 🔑 REQUIRED: Set your OpenAI API key
+temperature = 0.1
+max_tokens = 4000
+timeout = 30
+
+[agent]
+max_steps = 10
+max_tokens = 8000
+max_duration = "5m"
+reflection_steps = 3
+max_retries = 2
+retry_backoff = "1s"
+
+[runflow]
+use_data_analysis_agent = false
+enable_multi_agent = false
+
+[server]
+host = "localhost"
+port = 8080
+
+[storage]
+type = "file"  # Options: file, memory, redis, s3
+base_path = "./data/traces"
+
+# Redis storage configuration (optional)
+[storage.redis]
+addr = "localhost:6379"
+password = ""
+db = 0
+
+# S3 storage configuration (optional)  
+[storage.s3]
+region = "us-east-1"
+bucket = "openmanus-traces"
+access_key = ""
+secret_key = ""
+
+# HTTP tool configuration
+[tools.http]
+timeout = 30
+allowed_domains = []  # Empty = allow all
+blocked_domains = ["localhost", "127.0.0.1"]
+
+# File system tool configuration
+[tools.filesystem]
+allowed_paths = ["./workspace", "./data", "./examples"]
+blocked_paths = ["/etc", "/sys", "/proc", "/root"]
+
+# Browser tool configuration
+[tools.browser]
+headless = true
+timeout = 30
+user_agent = "OpenManus-Go/1.0"
+
+# Database configurations (optional)
+[tools.database.mysql]
+dsn = "user:password@tcp(localhost:3306)/dbname"
+
+[tools.database.redis]
+addr = "localhost:6379"
+password = ""
+db = 0
