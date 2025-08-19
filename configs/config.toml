@@ -61,7 +61,7 @@ user_agent = "OpenManus-Go/1.0"
 
 # Database configurations (optional)
 [tools.database.mysql]
-dsn = "user:password@tcp(localhost:3306)/dbname"
+dsn = ""  # 设置为空字符串以禁用MySQL工具
 
 [tools.database.redis]
 addr = "localhost:6379"
