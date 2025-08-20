@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	_ "github.com/go-sql-driver/mysql"
 	"openmanus-go/pkg/tool"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 // MySQLTool MySQL 数据库工具
@@ -26,9 +27,14 @@ func NewMySQLTool(dsn string) (*MySQLTool, error) {
 	}, []string{"operation"})
 
 	outputSchema := tool.CreateJSONSchema("object", map[string]any{
-		"success":       tool.BooleanProperty("操作是否成功"),
-		"result":        tool.StringProperty("操作结果描述"),
-		"rows":          tool.ArrayProperty("查询结果行", tool.ObjectProperty("行数据", nil)),
+		"success": tool.BooleanProperty("操作是否成功"),
+		"result":  tool.StringProperty("操作结果描述"),
+		"rows": tool.ArrayProperty("查询结果行", tool.ObjectProperty("行数据", map[string]any{
+			"additionalProperties": map[string]any{
+				"type":        "string",
+				"description": "列值",
+			},
+		})),
 		"affected_rows": tool.NumberProperty("影响的行数"),
 		"columns":       tool.ArrayProperty("列信息", tool.StringProperty("")),
 		"error":         tool.StringProperty("错误信息"),

@@ -7,9 +7,10 @@ import (
 
 // Message 表示对话消息
 type Message struct {
-	Role    string `json:"role"`           // system, user, assistant, tool
-	Content string `json:"content"`        // 消息内容
-	Name    string `json:"name,omitempty"` // 工具名称（用于工具调用结果）
+	Role      string     `json:"role"`                 // system, user, assistant, tool
+	Content   string     `json:"content"`              // 消息内容
+	Name      string     `json:"name,omitempty"`       // 工具名称（仅用于 tool 消息）
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"` // 工具调用（用于 assistant 消息）
 }
 
 // ToolCall 表示工具调用

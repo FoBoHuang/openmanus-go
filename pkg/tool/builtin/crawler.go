@@ -37,9 +37,14 @@ func NewCrawlerTool(userAgent string, allowedDomains, blockedDomains []string) *
 	}, []string{"operation", "url"})
 
 	outputSchema := tool.CreateJSONSchema("object", map[string]any{
-		"success":     tool.BooleanProperty("操作是否成功"),
-		"result":      tool.StringProperty("操作结果"),
-		"data":        tool.ArrayProperty("提取的数据", tool.ObjectProperty("数据项", nil)),
+		"success": tool.BooleanProperty("操作是否成功"),
+		"result":  tool.StringProperty("操作结果"),
+		"data": tool.ArrayProperty("提取的数据", tool.ObjectProperty("数据项", map[string]any{
+			"additionalProperties": map[string]any{
+				"type":        "string",
+				"description": "数据值",
+			},
+		})),
 		"links":       tool.ArrayProperty("提取的链接", tool.StringProperty("")),
 		"images":      tool.ArrayProperty("提取的图片", tool.StringProperty("")),
 		"text":        tool.StringProperty("提取的文本"),

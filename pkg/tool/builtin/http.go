@@ -30,8 +30,10 @@ func NewHTTPTool() *HTTPTool {
 	}, []string{"url"})
 
 	outputSchema := tool.CreateJSONSchema("object", map[string]any{
-		"status_code":  tool.NumberProperty("HTTP 状态码"),
-		"headers":      tool.ObjectProperty("响应头", nil),
+		"status_code": tool.NumberProperty("HTTP 状态码"),
+		"headers": tool.ObjectProperty("响应头", map[string]any{
+			"additionalProperties": tool.StringProperty("响应头值"),
+		}),
 		"body":         tool.StringProperty("响应体内容"),
 		"content_type": tool.StringProperty("内容类型"),
 		"size":         tool.NumberProperty("响应体大小（字节）"),
@@ -147,11 +149,13 @@ func NewHTTPClientTool() *HTTPClientTool {
 		"requests": tool.ArrayProperty("HTTP 请求列表", map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"url":     tool.StringProperty("请求 URL"),
-				"method":  tool.StringProperty("HTTP 方法"),
-				"headers": tool.ObjectProperty("请求头", nil),
-				"body":    tool.StringProperty("请求体"),
-				"name":    tool.StringProperty("请求名称（可选）"),
+				"url":    tool.StringProperty("请求 URL"),
+				"method": tool.StringProperty("HTTP 方法"),
+				"headers": tool.ObjectProperty("请求头", map[string]any{
+					"additionalProperties": tool.StringProperty("请求头值"),
+				}),
+				"body": tool.StringProperty("请求体"),
+				"name": tool.StringProperty("请求名称（可选）"),
 			},
 			"required": []string{"url"},
 		}),

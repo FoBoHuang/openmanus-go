@@ -176,11 +176,17 @@ func BooleanProperty(description string) map[string]any {
 
 // ObjectProperty 创建对象属性
 func ObjectProperty(description string, properties map[string]any) map[string]any {
-	return map[string]any{
+	result := map[string]any{
 		"type":        "object",
 		"description": description,
-		"properties":  properties,
 	}
+
+	// 只有当 properties 不为 nil 时才添加
+	if properties != nil {
+		result["properties"] = properties
+	}
+
+	return result
 }
 
 // ArrayProperty 创建数组属性

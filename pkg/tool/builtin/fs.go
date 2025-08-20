@@ -109,7 +109,12 @@ func (fs *FileSystemTool) checkPath(path string) error {
 	if len(fs.allowedPaths) > 0 {
 		allowed := false
 		for _, allowedPath := range fs.allowedPaths {
-			if strings.HasPrefix(absPath, allowedPath) {
+			// 将允许的路径也转换为绝对路径进行比较
+			absAllowedPath, err := filepath.Abs(allowedPath)
+			if err != nil {
+				continue
+			}
+			if strings.HasPrefix(absPath, absAllowedPath) {
 				allowed = true
 				break
 			}
