@@ -137,12 +137,17 @@ func newDataAnalysisTool() *DataAnalysisTool {
 	}, []string{"operation"})
 
 	outputSchema := tool.CreateJSONSchema("object", map[string]any{
-		"success":    tool.BooleanProperty("操作是否成功"),
-		"result":     tool.StringProperty("分析结果"),
-		"statistics": tool.ObjectProperty("统计信息", nil),
-		"patterns":   tool.ArrayProperty("发现的模式", tool.StringProperty("")),
-		"report":     tool.StringProperty("生成的报告"),
-		"error":      tool.StringProperty("错误信息"),
+		"success": tool.BooleanProperty("操作是否成功"),
+		"result":  tool.StringProperty("分析结果"),
+		"statistics": tool.ObjectProperty("统计信息", map[string]any{
+			"additionalProperties": map[string]any{
+				"type":        "number",
+				"description": "统计值",
+			},
+		}),
+		"patterns": tool.ArrayProperty("发现的模式", tool.StringProperty("")),
+		"report":   tool.StringProperty("生成的报告"),
+		"error":    tool.StringProperty("错误信息"),
 	}, []string{"success"})
 
 	baseTool := tool.NewBaseTool(
