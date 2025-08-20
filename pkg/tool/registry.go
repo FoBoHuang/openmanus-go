@@ -80,6 +80,19 @@ func (r *Registry) List() []Tool {
 	return tools
 }
 
+// ListNames 列出所有工具名称
+func (r *Registry) ListNames() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	names := make([]string, 0, len(r.tools))
+	for name := range r.tools {
+		names = append(names, name)
+	}
+
+	return names
+}
+
 // GetToolsManifest 获取工具清单（用于 LLM 提示）
 func (r *Registry) GetToolsManifest() []ToolInfo {
 	r.mu.RLock()

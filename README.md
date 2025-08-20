@@ -6,11 +6,13 @@
 
 - 🎯 **目标驱动**：通过自然语言描述目标，Agent 自动规划和执行
 - 🔄 **智能循环**：Plan → Tool Use → Observation → Reflection → Next Action
-- 🛠️ **丰富工具**：内置 HTTP、文件系统、数据库、浏览器、爬虫等工具
-- 🔌 **MCP 兼容**：支持 Model Context Protocol 标准
-- 📊 **数据分析**：专门的数据分析 Agent 支持
+- 🛠️ **丰富工具**：内置 HTTP、文件系统、数据库、浏览器、爬虫等 6+ 工具
+- 🔌 **MCP 集成**：完整的 Model Context Protocol 服务器和客户端实现
+- 🤝 **多 Agent 协作**：支持顺序、并行和 DAG 工作流编排
+- 📊 **数据分析**：专门的数据分析 Agent 和工作流支持
 - 🚀 **高性能**：Go 语言实现，支持并发和高效执行
 - 🐳 **容器化**：完整的 Docker 部署方案
+- 🔧 **易扩展**：插件化工具系统，支持自定义 Agent 类型
 
 ## 🏗️ 架构概览
 
@@ -72,11 +74,22 @@ make build
 ### 基本命令
 
 ```bash
-# 交互模式
+# 单 Agent 交互模式
 openmanus run --interactive
 
 # 执行单个任务
 openmanus run "你的任务描述"
+
+# 启动 MCP 服务器
+openmanus mcp --port 8080
+
+# 生成 MCP 工具文档
+openmanus mcp --docs
+
+# 多 Agent 协作流程
+openmanus flow --mode sequential --agents 2
+openmanus flow --mode parallel --data-analysis
+openmanus flow --mode dag --agents 5
 
 # 查看可用工具
 openmanus tools list
@@ -228,6 +241,59 @@ blocked_domains = ["localhost", "127.0.0.1"]
 - 日志分析处理
 - 系统状态检查
 - 自动化运维任务
+
+## 🔌 MCP 集成
+
+OpenManus-Go 提供完整的 MCP (Model Context Protocol) 支持：
+
+### MCP 服务器
+```bash
+# 启动 MCP 服务器
+./bin/openmanus mcp --port 8080
+
+# 查看可用端点
+curl http://localhost:8080/health
+curl http://localhost:8080/tools
+```
+
+### MCP 客户端
+```go
+client := mcp.NewClient("http://localhost:8080")
+err := client.Initialize(ctx)
+tools, err := client.ListTools(ctx)
+result, err := client.CallTool(ctx, "http", args)
+```
+
+## 🤝 多 Agent 协作
+
+支持多种工作流模式：
+
+### 顺序执行
+```bash
+./bin/openmanus flow --mode sequential --agents 3
+```
+
+### 并行执行
+```bash
+./bin/openmanus flow --mode parallel --agents 5
+```
+
+### DAG 工作流
+```bash
+./bin/openmanus flow --mode dag --data-analysis
+```
+
+### 自定义工作流
+```go
+workflow := flow.NewWorkflow("my-workflow", "Custom Workflow", flow.ExecutionModeDAG)
+
+task1 := flow.NewTask("collect", "数据收集", "general", "收集数据")
+task2 := flow.NewTask("process", "数据处理", "data_analysis", "处理数据")
+task2.Dependencies = []string{"collect"}
+
+workflow.AddTask(task1)
+workflow.AddTask(task2)
+```
 
 ## 🏗️ 开发指南
 

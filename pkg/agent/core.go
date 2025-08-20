@@ -27,6 +27,9 @@ type Agent interface {
 
 	// Loop 执行完整的控制循环
 	Loop(ctx context.Context, goal string) (string, error)
+
+	// GetTrace 获取最近的执行轨迹
+	GetTrace() *state.Trace
 }
 
 // BaseAgent Agent 的基础实现
