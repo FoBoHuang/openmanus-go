@@ -7,8 +7,10 @@ import (
 	"text/tabwriter"
 
 	"openmanus-go/pkg/config"
+	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/tool"
 	"openmanus-go/pkg/tool/builtin"
+
 	"github.com/spf13/cobra"
 )
 
@@ -99,14 +101,14 @@ func newToolsInfoCommand() *cobra.Command {
 			}
 
 			// 显示详细信息
-			fmt.Printf("Tool: %s\n", toolInstance.Name())
-			fmt.Printf("Description: %s\n\n", toolInstance.Description())
+			logger.Infof("Tool: %s", toolInstance.Name())
+			logger.Infof("Description: %s", toolInstance.Description())
 
-			fmt.Println("Input Schema:")
+			logger.Info("Input Schema:")
 			inputJSON, _ := json.MarshalIndent(toolInstance.InputSchema(), "", "  ")
 			fmt.Printf("%s\n\n", inputJSON)
 
-			fmt.Println("Output Schema:")
+			logger.Info("Output Schema:")
 			outputJSON, _ := json.MarshalIndent(toolInstance.OutputSchema(), "", "  ")
 			fmt.Printf("%s\n", outputJSON)
 
@@ -142,11 +144,11 @@ func newToolsTestCommand() *cobra.Command {
 }
 
 func outputDefault(manifest []tool.ToolInfo) error {
-	fmt.Printf("Available Tools (%d):\n\n", len(manifest))
+	logger.Infof("Available Tools (%d):", len(manifest))
 
 	for _, toolInfo := range manifest {
-		fmt.Printf("📋 %s\n", toolInfo.Name)
-		fmt.Printf("   %s\n\n", toolInfo.Description)
+		logger.Infof("📋 %s", toolInfo.Name)
+		logger.Infof("   %s", toolInfo.Description)
 	}
 
 	return nil
@@ -169,24 +171,25 @@ func outputTable(manifest []tool.ToolInfo) error {
 }
 
 func outputJSON(manifest []tool.ToolInfo) error {
+	// 仍使用 JSON 直接输出，便于机器读取
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(manifest)
 }
 
 func testSingleTool(toolName string, cfg *config.Config) error {
-	fmt.Printf("Testing tool: %s\n", toolName)
+	logger.Infof("Testing tool: %s", toolName)
 
 	// 验证工具配置
 	if err := builtin.ValidateToolConfig(toolName, cfg); err != nil {
-		fmt.Printf("❌ Configuration validation failed: %v\n", err)
+		logger.Errorf("❌ Configuration validation failed: %v", err)
 		return err
 	}
 
 	// 创建工具实例
 	toolInstance, err := builtin.CreateToolFromConfig(toolName, cfg)
 	if err != nil {
-		fmt.Printf("❌ Failed to create tool: %v\n", err)
+		logger.Errorf("❌ Failed to create tool: %v", err)
 		return err
 	}
 
@@ -199,41 +202,41 @@ func testSingleTool(toolName string, cfg *config.Config) error {
 	case "browser":
 		return testBrowserTool(toolInstance)
 	default:
-		fmt.Printf("✅ Tool '%s' created successfully\n", toolName)
-		fmt.Printf("   Type: %T\n", toolInstance)
-		fmt.Printf("   Description: %s\n", toolInstance.Description())
+		logger.Infof("✅ Tool '%s' created successfully", toolName)
+		logger.Infof("   Type: %T", toolInstance)
+		logger.Infof("   Description: %s", toolInstance.Description())
 		return nil
 	}
 }
 
 func testAllTools(cfg *config.Config) error {
-	fmt.Println("Testing all available tools...\n")
+	logger.Infof("Testing all available tools...")
 
 	toolNames := builtin.GetBuiltinToolsList()
 	successCount := 0
 
 	for _, toolName := range toolNames {
-		fmt.Printf("🔧 Testing %s... ", toolName)
+		logger.Infof("🔧 Testing %s... ", toolName)
 
 		if err := builtin.ValidateToolConfig(toolName, cfg); err != nil {
-			fmt.Printf("❌ Config invalid: %v\n", err)
+			logger.Errorf("❌ Config invalid: %v", err)
 			continue
 		}
 
 		if _, err := builtin.CreateToolFromConfig(toolName, cfg); err != nil {
-			fmt.Printf("❌ Failed: %v\n", err)
+			logger.Errorf("❌ Failed: %v", err)
 			continue
 		}
 
-		fmt.Printf("✅ OK\n")
+		logger.Infof("✅ OK")
 		successCount++
 	}
 
-	fmt.Printf("\nSummary: %d/%d tools passed basic tests\n", successCount, len(toolNames))
+	logger.Infof("Summary: %d/%d tools passed basic tests", successCount, len(toolNames))
 
 	if successCount < len(toolNames) {
-		fmt.Println("\n💡 Tip: Use 'openmanus tools info <tool-name>' for detailed information")
-		fmt.Println("   Some tools may require additional configuration (Redis, MySQL, etc.)")
+		logger.Infof("💡 Tip: Use 'openmanus tools info <tool-name>' for detailed information")
+		logger.Infof("   Some tools may require additional configuration (Redis, MySQL, etc.)")
 	}
 
 	return nil
@@ -242,10 +245,10 @@ func testAllTools(cfg *config.Config) error {
 func testRedisTool(toolInstance tool.Tool) error {
 	if redisTool, ok := toolInstance.(*builtin.RedisTool); ok {
 		if err := redisTool.Ping(nil); err != nil {
-			fmt.Printf("❌ Redis connection failed: %v\n", err)
+			logger.Errorf("❌ Redis connection failed: %v", err)
 			return err
 		}
-		fmt.Printf("✅ Redis connection successful\n")
+		logger.Infof("✅ Redis connection successful")
 	}
 	return nil
 }
@@ -253,16 +256,16 @@ func testRedisTool(toolInstance tool.Tool) error {
 func testMySQLTool(toolInstance tool.Tool) error {
 	if mysqlTool, ok := toolInstance.(*builtin.MySQLTool); ok {
 		if err := mysqlTool.Ping(nil); err != nil {
-			fmt.Printf("❌ MySQL connection failed: %v\n", err)
+			logger.Errorf("❌ MySQL connection failed: %v", err)
 			return err
 		}
-		fmt.Printf("✅ MySQL connection successful\n")
+		logger.Infof("✅ MySQL connection successful")
 	}
 	return nil
 }
 
 func testBrowserTool(toolInstance tool.Tool) error {
-	fmt.Printf("✅ Browser tool created (headless mode)\n")
-	fmt.Printf("   Note: Browser functionality requires system dependencies\n")
+	logger.Infof("✅ Browser tool created (headless mode)")
+	logger.Infof("   Note: Browser functionality requires system dependencies")
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"openmanus-go/pkg/agent"
 	"openmanus-go/pkg/config"
 	"openmanus-go/pkg/llm"
+	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/tool"
 	"openmanus-go/pkg/tool/builtin"
 
@@ -56,11 +57,15 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// 设置日志级别
+	// 设置日志级别（debug/verbose 优先）
 	if debug {
-		fmt.Println("Debug mode enabled")
+		logger.InitWithConfig(logger.Config{Level: "debug", Output: cfg.Logging.Output, FilePath: cfg.Logging.FilePath})
+		logger.Info("Debug mode enabled")
 	} else if verbose {
-		fmt.Println("Verbose mode enabled")
+		logger.InitWithConfig(logger.Config{Level: "info", Output: cfg.Logging.Output, FilePath: cfg.Logging.FilePath})
+		logger.Info("Verbose mode enabled")
+	} else {
+		logger.InitWithConfig(logger.Config{Level: cfg.Logging.Level, Output: cfg.Logging.Output, FilePath: cfg.Logging.FilePath})
 	}
 
 	// 获取目标
@@ -79,7 +84,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	// 应用命令行覆盖
 	if temp, _ := cmd.Flags().GetString("temperature"); temp != "" {
 		// 解析并设置温度
-		fmt.Printf("Setting temperature to %s\n", temp)
+		logger.Infof("Setting temperature to %s", temp)
 	}
 
 	// 创建工具注册表
@@ -109,7 +114,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		fmt.Println("\nReceived interrupt signal, stopping...")
+		logger.Warn("Received interrupt signal, stopping...")
 		cancel()
 	}()
 
@@ -121,7 +126,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 }
 
 func runSingleGoal(ctx context.Context, agent agent.Agent, goal string, cmd *cobra.Command) error {
-	fmt.Printf("🎯 Goal: %s\n\n", goal)
+	logger.Infof("🎯 Goal: %s", goal)
 
 	// 执行任务
 	result, err := agent.Loop(ctx, goal)
@@ -130,13 +135,13 @@ func runSingleGoal(ctx context.Context, agent agent.Agent, goal string, cmd *cob
 	}
 
 	// 输出结果
-	fmt.Printf("✅ Result:\n%s\n", result)
+	logger.Infof("✅ Result: \n%s", result)
 
 	// 保存轨迹
 	saveTrace, _ := cmd.Flags().GetBool("save-trace")
 	if saveTrace {
 		// TODO: 实现轨迹保存功能
-		fmt.Println("📝 Trace saving not implemented yet")
+		logger.Info("📝 Trace saving not implemented yet")
 	}
 
 	// 保存输出到文件
@@ -145,28 +150,28 @@ func runSingleGoal(ctx context.Context, agent agent.Agent, goal string, cmd *cob
 		if err := os.WriteFile(outputPath, []byte(result), 0644); err != nil {
 			return fmt.Errorf("failed to write output file: %w", err)
 		}
-		fmt.Printf("💾 Output saved to %s\n", outputPath)
+		logger.Infof("💾 Output saved to %s", outputPath)
 	}
 
 	return nil
 }
 
 func runInteractiveMode(ctx context.Context, agent agent.Agent, cmd *cobra.Command) error {
-	fmt.Println("🤖 OpenManus-Go Interactive Mode")
-	fmt.Println("Type your goals and press Enter. Type 'quit' or 'exit' to stop.")
-	fmt.Println("Commands: /help, /status, /trace, /config")
-	fmt.Println()
+	logger.Info("🤖 OpenManus-Go Interactive Mode")
+	logger.Info("Type your goals and press Enter. Type 'quit' or 'exit' to stop.")
+	logger.Info("Commands: /help, /status, /trace, /config")
+	logger.Info("")
 
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("Goodbye!")
+			logger.Info("Goodbye!")
 			return nil
 		default:
 		}
 
 		// 读取用户输入
-		fmt.Print("🎯 Goal: ")
+		logger.Info("🎯 Goal: ")
 		var input string
 		if _, err := fmt.Scanln(&input); err != nil {
 			continue
@@ -175,7 +180,7 @@ func runInteractiveMode(ctx context.Context, agent agent.Agent, cmd *cobra.Comma
 		// 处理特殊命令
 		switch input {
 		case "quit", "exit":
-			fmt.Println("Goodbye!")
+			logger.Info("Goodbye!")
 			return nil
 		case "/help":
 			printHelp()
@@ -194,14 +199,14 @@ func runInteractiveMode(ctx context.Context, agent agent.Agent, cmd *cobra.Comma
 		}
 
 		// 执行目标
-		fmt.Printf("\n🔄 Executing: %s\n", input)
+		logger.Infof("🔄 Executing: %s", input)
 		result, err := agent.Loop(ctx, input)
 		if err != nil {
-			fmt.Printf("❌ Error: %v\n\n", err)
+			logger.Errorf("❌ Error: %v", err)
 			continue
 		}
 
-		fmt.Printf("✅ Result:\n%s\n\n", result)
+		logger.Infof("✅ Result:\n%s\n", result)
 
 		// 自动保存轨迹
 		// TODO: 实现轨迹自动保存
@@ -209,7 +214,7 @@ func runInteractiveMode(ctx context.Context, agent agent.Agent, cmd *cobra.Comma
 }
 
 func printHelp() {
-	fmt.Println(`
+	logger.Info(`
 Available commands:
   /help    - Show this help message
   /status  - Show agent status
@@ -221,7 +226,7 @@ Available commands:
 }
 
 func printStatus(agent agent.Agent) {
-	fmt.Printf(`
+	logger.Infof(`
 Agent Status:
   Status: Running
   Type: BaseAgent
@@ -229,14 +234,14 @@ Agent Status:
 }
 
 func printTrace(agent agent.Agent) {
-	fmt.Println(`
+	logger.Info(`
 Current Trace:
   No trace information available yet
 `)
 }
 
 func printConfig() {
-	fmt.Println(`
+	logger.Info(`
 Configuration:
   Config file: Use --config to specify
   Tools: HTTP, FileSystem, Redis, MySQL, Browser, Crawler

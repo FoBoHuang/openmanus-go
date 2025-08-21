@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"openmanus-go/cmd/openmanus/commands"
+	"openmanus-go/pkg/logger"
+
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +46,7 @@ It supports:
 
 	// 执行命令
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		logger.Errorw("command execution error", "error", err)
 		os.Exit(1)
 	}
 }

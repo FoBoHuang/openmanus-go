@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"openmanus-go/pkg/logger"
+
 	"github.com/google/uuid"
 )
 
@@ -67,22 +69,27 @@ func (e *DefaultFlowEngine) Execute(ctx context.Context, workflow *Workflow, inp
 
 	// 开始执行
 	execution.Start()
+	logger.Infow("flow.execute.start", "execution_id", executionID, "workflow", workflow.Name, "mode", workflow.Mode, "tasks", len(workflow.Tasks))
 
 	// 根据执行模式选择执行策略
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				execution.Fail(fmt.Errorf("panic during execution: %v", r))
+				logger.Errorw("flow.execute.panic", "execution_id", executionID, "error", r)
 			}
 		}()
 
 		var err error
 		switch workflow.Mode {
 		case ExecutionModeSequential:
+			logger.Debugw("flow.mode", "execution_id", executionID, "mode", "sequential")
 			err = e.executeSequential(execCtx, execution)
 		case ExecutionModeParallel:
+			logger.Debugw("flow.mode", "execution_id", executionID, "mode", "parallel")
 			err = e.executeParallel(execCtx, execution)
 		case ExecutionModeDAG:
+			logger.Debugw("flow.mode", "execution_id", executionID, "mode", "dag")
 			err = e.executeDAG(execCtx, execution)
 		default:
 			err = fmt.Errorf("unsupported execution mode: %s", workflow.Mode)
@@ -90,10 +97,12 @@ func (e *DefaultFlowEngine) Execute(ctx context.Context, workflow *Workflow, inp
 
 		if err != nil {
 			execution.Fail(err)
+			logger.Errorw("flow.execute.failed", "execution_id", executionID, "error", err)
 		} else {
 			// 收集所有任务的输出作为流程输出
 			output := e.collectFlowOutput(execution)
 			execution.Complete(output)
+			logger.Infow("flow.execute.completed", "execution_id", executionID, "stats", e.getExecutionStats(execution))
 		}
 	}()
 
@@ -126,6 +135,7 @@ func (e *DefaultFlowEngine) executeParallel(ctx context.Context, execution *Flow
 
 	// 按层级执行
 	for levelIndex, level := range levels {
+		logger.Debugw("flow.execute.level", "execution_id", execution.ID, "level", levelIndex, "tasks", len(level))
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -312,6 +322,8 @@ func (e *DefaultFlowEngine) Cleanup(executionID string) error {
 
 	// 从执行列表中移除
 	delete(e.executions, executionID)
+
+	logger.Infow("flow.cleanup", "execution_id", executionID)
 
 	return nil
 }

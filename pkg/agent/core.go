@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"openmanus-go/pkg/llm"
+	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/state"
 	"openmanus-go/pkg/tool"
 )
@@ -146,22 +147,28 @@ func (a *BaseAgent) Loop(ctx context.Context, goal string) (string, error) {
 		UpdatedAt: time.Now(),
 	}
 
+	logger.Infow("agent.loop.start", "goal", goal, "budget_max_steps", a.config.MaxSteps, "budget_max_tokens", a.config.MaxTokens, "budget_max_duration", a.config.MaxDuration.String())
+
 	var finalResult string
 
 	for !a.ShouldStop(trace) {
 		select {
 		case <-ctx.Done():
 			trace.Status = state.TraceStatusCanceled
+			logger.Warnw("agent.loop.canceled", "goal", goal)
 			return "", ctx.Err()
 		default:
 		}
 
 		// 规划下一步
+		logger.Debugw("agent.plan.start", "used_steps", len(trace.Steps))
 		action, err := a.Plan(ctx, goal, trace)
 		if err != nil {
 			trace.Status = state.TraceStatusFailed
+			logger.Errorw("agent.plan.error", "error", err)
 			return "", fmt.Errorf("planning failed: %w", err)
 		}
+		logger.Infow("agent.plan.ok", "action", action.Name, "args", action.Args)
 
 		// 添加步骤到轨迹
 		_ = trace.AddStep(action)
@@ -170,6 +177,7 @@ func (a *BaseAgent) Loop(ctx context.Context, goal string) (string, error) {
 		if action.Name == "direct_answer" {
 			finalResult = getStringFromArgs(action.Args, "answer")
 			trace.Status = state.TraceStatusCompleted
+			logger.Infow("agent.answer", "result_preview", previewString(finalResult, 160))
 			break
 		}
 
@@ -177,10 +185,12 @@ func (a *BaseAgent) Loop(ctx context.Context, goal string) (string, error) {
 		if action.Name == "stop" {
 			finalResult = getStringFromArgs(action.Args, "reason")
 			trace.Status = state.TraceStatusCompleted
+			logger.Infow("agent.stop", "reason", finalResult)
 			break
 		}
 
 		// 执行工具调用
+		logger.Infow("agent.act.start", "tool", action.Name, "args", action.Args)
 		observation, err := a.Act(ctx, action)
 		if err != nil {
 			// 执行失败，但继续运行让 Agent 处理错误
@@ -189,17 +199,31 @@ func (a *BaseAgent) Loop(ctx context.Context, goal string) (string, error) {
 				ErrMsg: err.Error(),
 			}
 		}
+		if observation != nil {
+			if observation.ErrMsg != "" {
+				logger.Warnw("agent.act.error", "tool", action.Name, "error", observation.ErrMsg, "latency_ms", observation.Latency)
+			} else {
+				logger.Infow("agent.act.ok", "tool", action.Name, "latency_ms", observation.Latency, "output_preview", previewAny(observation.Output))
+			}
+		}
 
 		// 更新观测结果
 		trace.UpdateObservation(observation)
 
 		// 定期进行反思
 		if len(trace.Steps)%a.config.ReflectionSteps == 0 {
+			logger.Debugw("agent.reflect.start", "steps", len(trace.Steps))
 			reflection, err := a.Reflect(ctx, trace)
 			if err == nil && reflection.ShouldStop {
 				finalResult = reflection.Reason
 				trace.Status = state.TraceStatusCompleted
+				logger.Infow("agent.reflect.stop", "reason", reflection.Reason, "confidence", reflection.Confidence)
 				break
+			}
+			if err != nil {
+				logger.Warnw("agent.reflect.error", "error", err)
+			} else {
+				logger.Debugw("agent.reflect.ok", "revise_plan", reflection.RevisePlan, "hint", reflection.NextActionHint)
 			}
 		}
 	}
@@ -208,6 +232,8 @@ func (a *BaseAgent) Loop(ctx context.Context, goal string) (string, error) {
 	if finalResult == "" {
 		finalResult = a.generateSummary(trace)
 	}
+
+	logger.Infow("agent.loop.done", "goal", goal, "status", trace.Status, "steps", len(trace.Steps))
 
 	return finalResult, nil
 }
@@ -255,6 +281,27 @@ func getStringFromArgs(args map[string]any, key string) string {
 		}
 	}
 	return ""
+}
+
+// previewString 返回内容的简要预览
+func previewString(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
+
+// previewAny 对常见输出结构提供预览
+func previewAny(m map[string]any) any {
+	if m == nil {
+		return nil
+	}
+	if r, ok := m["result"]; ok {
+		if rs, ok := r.(string); ok {
+			return previewString(rs, 160)
+		}
+	}
+	return m
 }
 
 // SetConfig 设置配置

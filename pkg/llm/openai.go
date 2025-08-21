@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"openmanus-go/pkg/logger"
 )
 
 // OpenAIClient OpenAI 兼容的客户端实现
@@ -55,6 +57,8 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	logger.Debugw("llm.chat.request", "model", req.Model, "messages", len(req.Messages), "tools", len(req.Tools), "temperature", req.Temperature, "max_tokens", req.MaxTokens)
+
 	// 创建 HTTP 请求
 	url := strings.TrimSuffix(c.config.BaseURL, "/") + "/chat/completions"
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBody))
@@ -70,6 +74,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 	// 发送请求
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
+		logger.Errorw("llm.chat.transport_error", "error", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -91,9 +96,11 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 		}
 
 		if err := json.Unmarshal(respBody, &errorResp); err == nil && errorResp.Error.Message != "" {
+			logger.Errorw("llm.chat.api_error", "status", resp.StatusCode, "message", errorResp.Error.Message)
 			return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, errorResp.Error.Message)
 		}
 
+		logger.Errorw("llm.chat.api_error_raw", "status", resp.StatusCode, "body", string(respBody))
 		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, string(respBody))
 	}
 
@@ -102,6 +109,8 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 	if err := json.Unmarshal(respBody, &chatResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
+
+	logger.Debugw("llm.chat.response", "id", chatResp.ID, "choices", len(chatResp.Choices), "usage", chatResp.Usage)
 
 	return &chatResp, nil
 }

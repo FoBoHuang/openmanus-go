@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"openmanus-go/pkg/logger"
 )
 
 // Registry 工具注册表
@@ -38,6 +40,7 @@ func (r *Registry) Register(tool Tool) error {
 	}
 
 	r.tools[name] = tool
+	logger.Infow("tool.registry.register", "tool", name)
 	return nil
 }
 
@@ -51,6 +54,7 @@ func (r *Registry) Unregister(name string) error {
 	}
 
 	delete(r.tools, name)
+	logger.Infow("tool.registry.unregister", "tool", name)
 	return nil
 }
 
@@ -122,10 +126,12 @@ func (r *Registry) Invoke(ctx context.Context, name string, args map[string]any)
 
 	// 执行工具并测量延迟
 	start := time.Now()
+	logger.Debugw("tool.invoke.start", "tool", name, "args", args)
 	result, err := tool.Invoke(ctx, args)
 	latency := time.Since(start)
 
 	if err != nil {
+		logger.Warnw("tool.invoke.error", "tool", name, "error", err, "latency_ms", latency.Milliseconds())
 		return map[string]any{
 			"error":      err.Error(),
 			"latency_ms": latency.Milliseconds(),
@@ -137,6 +143,7 @@ func (r *Registry) Invoke(ctx context.Context, name string, args map[string]any)
 		result = make(map[string]any)
 	}
 	result["latency_ms"] = latency.Milliseconds()
+	logger.Debugw("tool.invoke.ok", "tool", name, "latency_ms", latency.Milliseconds())
 
 	return result, nil
 }
