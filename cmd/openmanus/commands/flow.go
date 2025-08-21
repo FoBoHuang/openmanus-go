@@ -9,6 +9,7 @@ import (
 	"openmanus-go/pkg/config"
 	"openmanus-go/pkg/flow"
 	"openmanus-go/pkg/llm"
+	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/tool"
 	"openmanus-go/pkg/tool/builtin"
 
@@ -48,12 +49,12 @@ func runFlow(cmd *cobra.Command, args []string) error {
 	agentCount, _ := cmd.Flags().GetInt("agents")
 	mode, _ := cmd.Flags().GetString("mode")
 
-	fmt.Printf("🔄 Starting Multi-Agent Flow\n")
-	fmt.Printf("   Workflow: %s\n", getWorkflowName(workflowName))
-	fmt.Printf("   Mode: %s\n", mode)
-	fmt.Printf("   Agents: %d\n", agentCount)
-	fmt.Printf("   Data Analysis: %t\n", dataAnalysis)
-	fmt.Println()
+	logger.Info("🔄 Starting Multi-Agent Flow")
+	logger.Infof("   Workflow: %s", getWorkflowName(workflowName))
+	logger.Infof("   Mode: %s", mode)
+	logger.Infof("   Agents: %d", agentCount)
+	logger.Infof("   Data Analysis: %t", dataAnalysis)
+	logger.Info("")
 
 	// 加载配置
 	cfg := config.DefaultConfig()
@@ -79,16 +80,16 @@ func runFlow(cmd *cobra.Command, args []string) error {
 		var err error
 		workflow, err = loadWorkflowFromFile(workflowName)
 		if err != nil {
-			fmt.Printf("⚠️  Failed to load workflow from file, creating demo workflow: %v\n", err)
+			logger.Warnf("⚠️  Failed to load workflow from file, creating demo workflow: %v", err)
 			workflow = createDemoWorkflow(mode, dataAnalysis, agentCount)
 		}
 	} else {
 		workflow = createDemoWorkflow(mode, dataAnalysis, agentCount)
 	}
 
-	fmt.Printf("📋 Workflow: %s (%d tasks)\n", workflow.Name, len(workflow.Tasks))
-	fmt.Printf("🔧 Execution Mode: %s\n", workflow.Mode)
-	fmt.Println()
+	logger.Infof("📋 Workflow: %s (%d tasks)", workflow.Name, len(workflow.Tasks))
+	logger.Infof("🔧 Execution Mode: %s", workflow.Mode)
+	logger.Info("")
 
 	// 执行工作流
 	ctx := context.Background()
@@ -102,7 +103,7 @@ func runFlow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start workflow execution: %w", err)
 	}
 
-	fmt.Printf("🚀 Workflow execution started (ID: %s)\n", execution.ID)
+	logger.Infof("🚀 Workflow execution started (ID: %s)", execution.ID)
 
 	// 监听执行事件
 	eventChan, err := flowEngine.Subscribe(execution.ID)
@@ -122,7 +123,7 @@ func runFlow(cmd *cobra.Command, args []string) error {
 			printFlowEvent(event)
 
 		case <-timeout:
-			fmt.Println("⏰ Execution timeout, canceling...")
+			logger.Info("⏰ Execution timeout, canceling...")
 			flowEngine.CancelExecution(execution.ID)
 			return fmt.Errorf("workflow execution timeout")
 
@@ -151,7 +152,7 @@ done:
 
 	// 清理资源
 	if err := flowEngine.Cleanup(execution.ID); err != nil {
-		fmt.Printf("⚠️  Warning: Failed to cleanup execution: %v\n", err)
+		logger.Warnf("⚠️  Warning: Failed to cleanup execution: %v", err)
 	}
 
 	return nil
@@ -236,51 +237,51 @@ func printFlowEvent(event *flow.FlowEvent) {
 
 	switch event.Type {
 	case flow.FlowEventTypeFlowStarted:
-		fmt.Printf("[%s] 🚀 Flow started: %s\n", timestamp, event.Message)
+		logger.Infof("[%s] 🚀 Flow started: %s", timestamp, event.Message)
 	case flow.FlowEventTypeFlowCompleted:
-		fmt.Printf("[%s] ✅ Flow completed: %s\n", timestamp, event.Message)
+		logger.Infof("[%s] ✅ Flow completed: %s", timestamp, event.Message)
 	case flow.FlowEventTypeFlowFailed:
-		fmt.Printf("[%s] ❌ Flow failed: %s\n", timestamp, event.Message)
+		logger.Infof("[%s] ❌ Flow failed: %s", timestamp, event.Message)
 	case flow.FlowEventTypeFlowCanceled:
-		fmt.Printf("[%s] 🛑 Flow canceled: %s\n", timestamp, event.Message)
+		logger.Infof("[%s] 🛑 Flow canceled: %s", timestamp, event.Message)
 	case flow.FlowEventTypeTaskStarted:
-		fmt.Printf("[%s] 🔄 Task started: %s (ID: %s)\n", timestamp, event.Message, event.TaskID)
+		logger.Infof("[%s] 🔄 Task started: %s (ID: %s)", timestamp, event.Message, event.TaskID)
 	case flow.FlowEventTypeTaskCompleted:
-		fmt.Printf("[%s] ✅ Task completed: %s (ID: %s)\n", timestamp, event.Message, event.TaskID)
+		logger.Infof("[%s] ✅ Task completed: %s (ID: %s)", timestamp, event.Message, event.TaskID)
 	case flow.FlowEventTypeTaskFailed:
-		fmt.Printf("[%s] ❌ Task failed: %s (ID: %s)\n", timestamp, event.Message, event.TaskID)
+		logger.Infof("[%s] ❌ Task failed: %s (ID: %s)", timestamp, event.Message, event.TaskID)
 	case flow.FlowEventTypeTaskSkipped:
-		fmt.Printf("[%s] ⏭️  Task skipped: %s (ID: %s)\n", timestamp, event.Message, event.TaskID)
+		logger.Infof("[%s] ⏭️  Task skipped: %s (ID: %s)", timestamp, event.Message, event.TaskID)
 	default:
-		fmt.Printf("[%s] 📝 Event: %s\n", timestamp, event.Message)
+		logger.Infof("[%s] 📝 Event: %s", timestamp, event.Message)
 	}
 }
 
 // printFlowResult 打印流程结果
 func printFlowResult(execution *flow.FlowExecution) {
-	fmt.Println("\n" + strings.Repeat("=", 60))
-	fmt.Printf("📊 Workflow Execution Summary\n")
-	fmt.Println(strings.Repeat("=", 60))
+	logger.Info("\n" + strings.Repeat("=", 60))
+	logger.Info("📊 Workflow Execution Summary")
+	logger.Info(strings.Repeat("=", 60))
 
-	fmt.Printf("Flow ID: %s\n", execution.ID)
-	fmt.Printf("Workflow: %s\n", execution.Workflow.Name)
-	fmt.Printf("Status: %s\n", execution.Status)
-	fmt.Printf("Mode: %s\n", execution.Workflow.Mode)
+	logger.Infof("Flow ID: %s", execution.ID)
+	logger.Infof("Workflow: %s", execution.Workflow.Name)
+	logger.Infof("Status: %s", execution.Status)
+	logger.Infof("Mode: %s", execution.Workflow.Mode)
 
 	if execution.StartTime != nil {
-		fmt.Printf("Started: %s\n", execution.StartTime.Format("2006-01-02 15:04:05"))
+		logger.Infof("Started: %s", execution.StartTime.Format("2006-01-02 15:04:05"))
 	}
 
 	if execution.EndTime != nil {
-		fmt.Printf("Completed: %s\n", execution.EndTime.Format("2006-01-02 15:04:05"))
-		fmt.Printf("Duration: %.2f seconds\n", execution.Duration.Seconds())
+		logger.Infof("Completed: %s", execution.EndTime.Format("2006-01-02 15:04:05"))
+		logger.Infof("Duration: %.2f seconds", execution.Duration.Seconds())
 	}
 
 	if execution.Error != "" {
-		fmt.Printf("Error: %s\n", execution.Error)
+		logger.Infof("Error: %s", execution.Error)
 	}
 
-	fmt.Println("\n📋 Task Results:")
+	logger.Info("\n📋 Task Results:")
 	for i, task := range execution.Workflow.Tasks {
 		status := "❓"
 		switch task.Status {
@@ -298,40 +299,40 @@ func printFlowResult(execution *flow.FlowExecution) {
 			status = "🛑"
 		}
 
-		fmt.Printf("  %d. %s %s (%s)\n", i+1, status, task.Name, task.ID)
+		logger.Infof("  %d. %s %s (%s)", i+1, status, task.Name, task.ID)
 
 		if task.Error != "" {
-			fmt.Printf("     Error: %s\n", task.Error)
+			logger.Infof("     Error: %s", task.Error)
 		}
 
 		if task.Duration > 0 {
-			fmt.Printf("     Duration: %.2f seconds\n", task.Duration.Seconds())
+			logger.Infof("     Duration: %.2f seconds", task.Duration.Seconds())
 		}
 
 		if task.Trace != nil && len(task.Trace.Steps) > 0 {
-			fmt.Printf("     Steps: %d\n", len(task.Trace.Steps))
+			logger.Infof("     Steps: %d", len(task.Trace.Steps))
 		}
 	}
 
 	// 打印统计信息
 	if stats, ok := execution.Output["stats"].(map[string]interface{}); ok {
-		fmt.Println("\n📈 Statistics:")
+		logger.Info("\n📈 Statistics:")
 		if totalTasks, ok := stats["total_tasks"].(int); ok {
-			fmt.Printf("  Total Tasks: %d\n", totalTasks)
+			logger.Infof("  Total Tasks: %d", totalTasks)
 		}
 		if completedTasks, ok := stats["completed_tasks"].(int); ok {
-			fmt.Printf("  Completed: %d\n", completedTasks)
+			logger.Infof("  Completed: %d", completedTasks)
 		}
 		if failedTasks, ok := stats["failed_tasks"].(int); ok {
-			fmt.Printf("  Failed: %d\n", failedTasks)
+			logger.Infof("  Failed: %d", failedTasks)
 		}
 		if successRate, ok := stats["success_rate"].(float64); ok {
-			fmt.Printf("  Success Rate: %.1f%%\n", successRate*100)
+			logger.Infof("  Success Rate: %.1f%%", successRate*100)
 		}
 		if totalSteps, ok := stats["total_steps"].(int); ok {
-			fmt.Printf("  Total Steps: %d\n", totalSteps)
+			logger.Infof("  Total Steps: %d", totalSteps)
 		}
 	}
 
-	fmt.Println(strings.Repeat("=", 60))
+	logger.Info(strings.Repeat("=", 60))
 }

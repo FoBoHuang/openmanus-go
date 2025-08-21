@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"openmanus-go/pkg/llm"
+	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/state"
 )
 
@@ -26,6 +27,7 @@ func NewReflector(llmClient llm.Client) *Reflector {
 func (r *Reflector) Reflect(ctx context.Context, trace *state.Trace) (*state.ReflectionResult, error) {
 	// 构建反思提示
 	prompt := r.buildReflectionPrompt(trace)
+	logger.Debugw("agent.reflect.request", "steps", len(trace.Steps), "status", trace.Status)
 
 	// 准备消息
 	messages := []llm.Message{
@@ -42,6 +44,7 @@ func (r *Reflector) Reflect(ctx context.Context, trace *state.Trace) (*state.Ref
 	// 发送请求
 	resp, err := r.llmClient.Chat(ctx, req)
 	if err != nil {
+		logger.Errorw("agent.reflect.llm_error", "error", err)
 		return nil, fmt.Errorf("reflection LLM request failed: %w", err)
 	}
 
@@ -55,6 +58,7 @@ func (r *Reflector) Reflect(ctx context.Context, trace *state.Trace) (*state.Ref
 
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		// 如果解析失败，创建默认结果
+		logger.Warnw("agent.reflect.parse_failed", "content_preview", preview(content, 200))
 		return &state.ReflectionResult{
 			RevisePlan:     false,
 			NextActionHint: content,
@@ -63,6 +67,8 @@ func (r *Reflector) Reflect(ctx context.Context, trace *state.Trace) (*state.Ref
 			Confidence:     0.5,
 		}, nil
 	}
+
+	logger.Debugw("agent.reflect.ok", "revise_plan", result.RevisePlan, "should_stop", result.ShouldStop, "confidence", result.Confidence)
 
 	return &result, nil
 }
@@ -153,6 +159,13 @@ func (r *Reflector) buildReflectionPrompt(trace *state.Trace) string {
 	prompt.WriteString("Please analyze this execution trace and provide your reflection.")
 
 	return prompt.String()
+}
+
+func preview(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 // analyzeStepOutcomes 分析步骤结果

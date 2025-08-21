@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"openmanus-go/pkg/agent"
+	"openmanus-go/pkg/logger"
 )
 
 // DefaultTaskExecutor 默认任务执行器
@@ -34,6 +35,7 @@ func (e *DefaultTaskExecutor) Execute(ctx context.Context, task *Task, execution
 
 	// 开始执行任务
 	task.Start()
+	logger.Infow("task.start", "execution_id", execution.ID, "task_id", task.ID, "task_name", task.Name, "agent_type", task.AgentType)
 	execution.EmitEvent(FlowEventTypeTaskStarted, task.ID, map[string]interface{}{
 		"agent_type": task.AgentType,
 		"goal":       task.Goal,
@@ -43,6 +45,7 @@ func (e *DefaultTaskExecutor) Execute(ctx context.Context, task *Task, execution
 	ag, err := e.getOrCreateAgent(task, execution)
 	if err != nil {
 		task.Fail(err)
+		logger.Errorw("task.agent_create_failed", "task_id", task.ID, "error", err)
 		execution.EmitEvent(FlowEventTypeTaskFailed, task.ID, map[string]interface{}{
 			"error": err.Error(),
 		}, fmt.Sprintf("Failed to create agent for task %s", task.Name))
@@ -54,11 +57,13 @@ func (e *DefaultTaskExecutor) Execute(ctx context.Context, task *Task, execution
 
 	// 构建任务目标
 	goal := e.buildTaskGoal(task, taskInput)
+	logger.Debugw("task.goal", "task_id", task.ID, "goal_preview", preview(goal))
 
 	// 执行任务
 	result, err := ag.Loop(ctx, goal)
 	if err != nil {
 		task.Fail(err)
+		logger.Errorw("task.failed", "task_id", task.ID, "error", err)
 		execution.EmitEvent(FlowEventTypeTaskFailed, task.ID, map[string]interface{}{
 			"error": err.Error(),
 		}, fmt.Sprintf("Task %s failed: %v", task.Name, err))
@@ -71,6 +76,7 @@ func (e *DefaultTaskExecutor) Execute(ctx context.Context, task *Task, execution
 	// 完成任务
 	task.Complete(output)
 	execution.SetTaskResult(task.ID, output)
+	logger.Infow("task.completed", "task_id", task.ID, "duration_sec", task.Duration.Seconds(), "steps", output["steps_count"], "status", output["status"])
 	execution.EmitEvent(FlowEventTypeTaskCompleted, task.ID, output, fmt.Sprintf("Task %s completed", task.Name))
 
 	// 保存执行轨迹
@@ -185,6 +191,8 @@ func (e *DefaultTaskExecutor) processTaskOutput(task *Task, result string, ag ag
 		output["structured"] = structuredOutput
 	}
 
+	logger.Debugw("task.output", "task_id", task.ID, "result_preview", preview(result))
+
 	return output
 }
 
@@ -248,6 +256,7 @@ func (e *DefaultTaskExecutor) ExecuteWithTimeout(ctx context.Context, task *Task
 		return err
 	case <-timeoutCtx.Done():
 		task.Fail(fmt.Errorf("task execution timeout after %v", timeout))
+		logger.Warnw("task.timeout", "task_id", task.ID, "timeout", timeout.String())
 		execution.EmitEvent(FlowEventTypeTaskFailed, task.ID, map[string]interface{}{
 			"error":   "timeout",
 			"timeout": timeout.String(),
@@ -325,4 +334,11 @@ func (e *DefaultTaskExecutor) GetExecutionSummary(task *Task) map[string]interfa
 	}
 
 	return summary
+}
+
+func preview(s string) string {
+	if len(s) <= 160 {
+		return s
+	}
+	return s[:160] + "..."
 }

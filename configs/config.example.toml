@@ -35,6 +35,14 @@ addr = "localhost:6379"
 password = ""
 db = 0
 
+[logging]
+# level: debug | info | warn | error
+level = "info"
+# output: console | file | both
+output = "console"
+# file_path used when output contains file
+file_path = "./log/openmanus.log"
+
 # S3 storage configuration (optional)  
 [storage.s3]
 region = "us-east-1"

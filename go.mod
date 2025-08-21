@@ -7,8 +7,10 @@ require (
 	github.com/go-rod/rod v0.114.5
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/gocolly/colly/v2 v2.1.0
+	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
+	go.uber.org/zap v1.27.0
 )
 
 require (
@@ -23,7 +25,6 @@ require (
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kennygrant/sanitize v1.2.4 // indirect

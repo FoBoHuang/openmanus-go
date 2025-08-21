@@ -13,7 +13,7 @@ timeout = 30
 max_steps = 10
 max_tokens = 8000
 max_duration = "5m"
-reflection_steps = 3
+reflection_steps = 2
 max_retries = 2
 retry_backoff = "1s"
 
@@ -35,6 +35,14 @@ addr = "localhost:6379"
 password = ""
 db = 0
 
+[logging]
+# level: debug | info | warn | error
+level = "info"
+# output: console | file | both
+output = "console"
+# file_path used when output contains file
+file_path = "./log/openmanus.log"
+
 # S3 storage configuration (optional)  
 [storage.s3]
 region = "us-east-1"
@@ -44,7 +52,7 @@ secret_key = ""
 
 # HTTP tool configuration
 [tools.http]
-timeout = 30
+timeout = 60
 allowed_domains = []  # Empty = allow all
 blocked_domains = ["localhost", "127.0.0.1"]
 
@@ -56,7 +64,7 @@ blocked_paths = ["/etc", "/sys", "/proc", "/root"]
 # Browser tool configuration
 [tools.browser]
 headless = true
-timeout = 30
+timeout = 60
 user_agent = "OpenManus-Go/1.0"
 
 # Database configurations (optional)

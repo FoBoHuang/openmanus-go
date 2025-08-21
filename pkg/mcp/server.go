@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 
+	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/tool"
 )
 
@@ -20,7 +20,6 @@ type Server struct {
 	serverInfo   ServerInfo
 	initialized  bool
 	logLevel     LogLevel
-	logger       *log.Logger
 }
 
 // NewServer 创建新的 MCP 服务器
@@ -38,7 +37,6 @@ func NewServer(toolRegistry *tool.Registry) *Server {
 			Version: "1.0.0",
 		},
 		logLevel: LogLevelInfo,
-		logger:   log.Default(),
 	}
 }
 
@@ -53,7 +51,7 @@ func (s *Server) Start(host string, port int) error {
 	mux.HandleFunc("/tools/invoke", s.handleToolInvoke)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
-	s.logger.Printf("Starting MCP server on %s", addr)
+	logger.Get().Sugar().Infow("Starting MCP server", "addr", addr)
 
 	server := &http.Server{
 		Addr:    addr,
@@ -118,7 +116,7 @@ func (s *Server) handleNotification(msg *Message) {
 		s.mu.Lock()
 		s.initialized = true
 		s.mu.Unlock()
-		s.logger.Println("Client initialized")
+		logger.Get().Sugar().Info("Client initialized")
 	case MethodSetLogLevel:
 		s.handleSetLogLevel(msg.Params)
 	}
@@ -237,7 +235,7 @@ func (s *Server) handleSetLogLevel(params interface{}) {
 		s.mu.Lock()
 		s.logLevel = logParams.Level
 		s.mu.Unlock()
-		s.logger.Printf("Log level set to: %s", logParams.Level)
+		logger.Get().Sugar().Infow("Log level changed", "level", logParams.Level)
 	}
 }
 
@@ -344,11 +342,6 @@ func (s *Server) writeErrorResponse(w http.ResponseWriter, id string, code int, 
 // newErrorResponse 创建错误响应
 func (s *Server) newErrorResponse(id string, code int, message string, data interface{}) *Message {
 	return NewErrorResponse(id, code, message, data)
-}
-
-// SetLogger 设置日志器
-func (s *Server) SetLogger(logger *log.Logger) {
-	s.logger = logger
 }
 
 // GetCapabilities 获取服务器能力

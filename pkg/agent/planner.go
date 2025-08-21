@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"openmanus-go/pkg/llm"
+	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/state"
 	"openmanus-go/pkg/tool"
 )
@@ -49,10 +50,10 @@ func (p *Planner) Plan(ctx context.Context, goal string, trace *state.Trace) (st
 	// 准备工具定义
 	tools := p.buildLLMTools()
 
-	// 调试信息：打印工具定义（已禁用）
-	fmt.Printf("DEBUG: Tools count: %d\n", len(tools))
+	// 调试信息
+	logger.Get().Sugar().Debugf("Tools count: %d", len(tools))
 	for i, tool := range tools {
-		fmt.Printf("DEBUG: Tool %d: %s - %s\n", i, tool.Function.Name, tool.Function.Description)
+		logger.Get().Sugar().Debugf("Tool %d: %s - %s", i, tool.Function.Name, tool.Function.Description)
 	}
 
 	// 创建请求
@@ -75,13 +76,13 @@ func (p *Planner) Plan(ctx context.Context, goal string, trace *state.Trace) (st
 
 	choice := resp.Choices[0]
 
-	// 调试信息（已禁用）
-	fmt.Printf("DEBUG: LLM Response - ToolCalls: %d, Content: %q, FinishReason: %s\n",
+	// 调试信息
+	logger.Get().Sugar().Debugf("LLM Response - ToolCalls: %d, Content: %q, FinishReason: %s",
 		len(choice.Message.ToolCalls), choice.Message.Content, choice.FinishReason)
 
 	// 打印完整的响应结构
 	if len(choice.Message.ToolCalls) > 0 {
-		fmt.Printf("DEBUG: ToolCall details: %+v\n", choice.Message.ToolCalls[0])
+		logger.Get().Sugar().Debugf("ToolCall details: %+v", choice.Message.ToolCalls[0])
 	}
 
 	// 处理工具调用

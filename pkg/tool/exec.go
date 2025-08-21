@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/state"
 )
 
@@ -36,6 +37,7 @@ func (e *Executor) Execute(ctx context.Context, action state.Action) (*state.Obs
 	defer cancel()
 
 	start := time.Now()
+	logger.Infow("tool.exec.start", "tool", action.Name, "args", action.Args)
 
 	// 调用工具
 	result, err := e.registry.Invoke(execCtx, action.Name, action.Args)
@@ -50,9 +52,12 @@ func (e *Executor) Execute(ctx context.Context, action state.Action) (*state.Obs
 
 	if err != nil {
 		observation.ErrMsg = err.Error()
+		logger.Warnw("tool.exec.error", "tool", action.Name, "error", err, "latency_ms", observation.Latency)
 		// 即使出错，也返回观测结果，让 Agent 能够处理错误
 		return observation, nil
 	}
+
+	logger.Infow("tool.exec.ok", "tool", action.Name, "latency_ms", observation.Latency, "output_preview", previewResult(result))
 
 	return observation, nil
 }
@@ -151,4 +156,19 @@ func (e *Executor) GetAvailableTools() []ToolInfo {
 // SetTimeout 设置执行超时时间
 func (e *Executor) SetTimeout(timeout time.Duration) {
 	e.timeout = timeout
+}
+
+func previewResult(m map[string]any) any {
+	if m == nil {
+		return nil
+	}
+	if r, ok := m["result"]; ok {
+		if rs, ok := r.(string); ok {
+			if len(rs) > 160 {
+				return rs[:160] + "..."
+			}
+			return rs
+		}
+	}
+	return m
 }

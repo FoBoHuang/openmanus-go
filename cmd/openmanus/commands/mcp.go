@@ -2,10 +2,9 @@ package commands
 
 import (
 	"fmt"
-	"log"
-	"os"
 
 	"openmanus-go/pkg/config"
+	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/mcp"
 	"openmanus-go/pkg/tool"
 	"openmanus-go/pkg/tool/builtin"
@@ -47,6 +46,9 @@ func runMCPServer(cmd *cobra.Command, args []string) error {
 	// 加载配置
 	cfg := config.DefaultConfig()
 
+	// 初始化 logger 输出位置（遵守配置）
+	logger.InitWithConfig(logger.Config{Level: cfg.Logging.Level, Output: cfg.Logging.Output, FilePath: cfg.Logging.FilePath})
+
 	// 创建工具注册表
 	toolRegistry := tool.NewRegistry()
 
@@ -58,18 +60,12 @@ func runMCPServer(cmd *cobra.Command, args []string) error {
 	// 创建 MCP 服务器
 	mcpServer := mcp.NewServer(toolRegistry)
 
-	// 设置日志器
-	logger := log.New(os.Stdout, "[MCP] ", log.LstdFlags)
-	mcpServer.SetLogger(logger)
-
-	fmt.Printf("🚀 Starting MCP Server on %s:%d\n", host, port)
-	fmt.Println("📋 Available endpoints:")
-	fmt.Println("   POST /             - MCP protocol endpoint")
-	fmt.Println("   GET  /tools        - List available tools (REST)")
-	fmt.Println("   POST /tools/invoke - Invoke a tool (REST)")
-	fmt.Println("   GET  /health       - Health check")
-	fmt.Printf("🔧 Registered %d tools\n", len(toolRegistry.ListNames()))
-	fmt.Println()
+	// 使用全局 zap logger 输出信息
+	logger.Get().Sugar().Infof("🚀 Starting MCP Server on %s:%d", host, port)
+	logger.Get().Sugar().Infow("📋 Available endpoints",
+		"endpoints", []string{"POST /", "GET /tools", "POST /tools/invoke", "GET /health"},
+	)
+	logger.Get().Sugar().Infof("🔧 Registered %d tools", len(toolRegistry.ListNames()))
 
 	// 启动服务器
 	return mcpServer.Start(host, port)
@@ -87,15 +83,10 @@ func generateMCPDocs() error {
 		return fmt.Errorf("failed to register builtin tools: %w", err)
 	}
 
-	fmt.Println("# MCP Tools Documentation")
-	fmt.Println()
-	fmt.Println("This document describes the available tools in the OpenManus-Go MCP server.")
-	fmt.Println()
-	fmt.Printf("**Total Tools**: %d\n", len(toolRegistry.ListNames()))
-	fmt.Println()
-
-	fmt.Println("## Available Tools")
-	fmt.Println()
+	logger.Get().Sugar().Infof("# MCP Tools Documentation")
+	logger.Get().Sugar().Infof("This document describes the available tools in the OpenManus-Go MCP server.")
+	logger.Get().Sugar().Infof("**Total Tools**: %d", len(toolRegistry.ListNames()))
+	logger.Get().Sugar().Infof("## Available Tools")
 
 	// 生成实际的工具文档
 	for _, toolName := range toolRegistry.ListNames() {
@@ -104,12 +95,12 @@ func generateMCPDocs() error {
 			continue
 		}
 
-		fmt.Printf("### %s\n", t.Name())
-		fmt.Printf("- **Description**: %s\n", t.Description())
+		logger.Get().Sugar().Infof("### %s", t.Name())
+		logger.Get().Sugar().Infof("- **Description**: %s", t.Description())
 
 		// 输入 Schema
 		if inputSchema := t.InputSchema(); inputSchema != nil {
-			fmt.Println("- **Input Schema**:")
+			logger.Get().Sugar().Infof("- **Input Schema**:")
 			if properties, ok := inputSchema["properties"].(map[string]interface{}); ok {
 				for propName, propDef := range properties {
 					if prop, ok := propDef.(map[string]interface{}); ok {
@@ -121,7 +112,7 @@ func generateMCPDocs() error {
 						if d, ok := prop["description"].(string); ok {
 							propDesc = d
 						}
-						fmt.Printf("  - `%s` (%s): %s\n", propName, propType, propDesc)
+						logger.Get().Sugar().Infof("  - `%s` (%s): %s", propName, propType, propDesc)
 					}
 				}
 			}
@@ -129,7 +120,7 @@ func generateMCPDocs() error {
 
 		// 输出 Schema
 		if outputSchema := t.OutputSchema(); outputSchema != nil {
-			fmt.Println("- **Output Schema**:")
+			logger.Get().Sugar().Infof("- **Output Schema**:")
 			if properties, ok := outputSchema["properties"].(map[string]interface{}); ok {
 				for propName, propDef := range properties {
 					if prop, ok := propDef.(map[string]interface{}); ok {
@@ -141,20 +132,19 @@ func generateMCPDocs() error {
 						if d, ok := prop["description"].(string); ok {
 							propDesc = d
 						}
-						fmt.Printf("  - `%s` (%s): %s\n", propName, propType, propDesc)
+						logger.Get().Sugar().Infof("  - `%s` (%s): %s", propName, propType, propDesc)
 					}
 				}
 			}
 		}
 
-		fmt.Println()
+		logger.Get().Sugar().Info("")
 	}
 
-	fmt.Println("## Usage Examples")
-	fmt.Println()
-	fmt.Println("### MCP Protocol (JSON-RPC)")
-	fmt.Println("```json")
-	fmt.Println(`{
+	logger.Get().Sugar().Infof("## Usage Examples")
+	logger.Get().Sugar().Infof("### MCP Protocol (JSON-RPC)")
+	logger.Get().Sugar().Infof("```json")
+	logger.Get().Sugar().Infof(`{
   "jsonrpc": "2.0",
   "id": "1",
   "method": "tools/call",
@@ -166,16 +156,14 @@ func generateMCPDocs() error {
     }
   }
 }`)
-	fmt.Println("```")
-	fmt.Println()
+	logger.Get().Sugar().Infof("```")
 
-	fmt.Println("### REST API")
-	fmt.Println("```bash")
-	fmt.Println("# List tools")
-	fmt.Println("curl http://localhost:8080/tools")
-	fmt.Println()
-	fmt.Println("# Invoke tool")
-	fmt.Println(`curl -X POST http://localhost:8080/tools/invoke \
+	logger.Get().Sugar().Infof("### REST API")
+	logger.Get().Sugar().Infof("```bash")
+	logger.Get().Sugar().Infof("# List tools")
+	logger.Get().Sugar().Infof("curl http://localhost:8080/tools")
+	logger.Get().Sugar().Infof("# Invoke tool")
+	logger.Get().Sugar().Infof(`curl -X POST http://localhost:8080/tools/invoke \
   -H "Content-Type: application/json" \
   -d '{
     "tool": "http",
@@ -184,7 +172,7 @@ func generateMCPDocs() error {
       "method": "GET"
     }
   }'`)
-	fmt.Println("```")
+	logger.Get().Sugar().Infof("`")
 
 	return nil
 }

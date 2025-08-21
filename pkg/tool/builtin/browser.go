@@ -202,11 +202,30 @@ func (b *BrowserTool) typeText(ctx context.Context, selector, text string) (map[
 
 // getText 获取元素文本
 func (b *BrowserTool) getText(ctx context.Context, selector string) (map[string]any, error) {
+	// 检查上下文是否已取消
+	select {
+	case <-ctx.Done():
+		return b.errorResult(fmt.Sprintf("operation canceled: %v", ctx.Err())), nil
+	default:
+	}
+
 	page := b.browser.MustPage()
 	defer page.Close()
 
+	// 等待页面加载完成
+	err := page.WaitLoad()
+	if err != nil {
+		return b.errorResult(fmt.Sprintf("page load timeout: %v", err)), nil
+	}
+
+	// 额外等待一下确保页面完全渲染
+	select {
+	case <-ctx.Done():
+		return b.errorResult(fmt.Sprintf("operation canceled: %v", ctx.Err())), nil
+	case <-time.After(2 * time.Second):
+	}
+
 	var text string
-	var err error
 
 	if selector == "" {
 		// 获取整个页面的文本
@@ -216,15 +235,40 @@ func (b *BrowserTool) getText(ctx context.Context, selector string) (map[string]
 		}
 		text = result.Value.Str()
 	} else {
+		// 检查上下文是否已取消
+		select {
+		case <-ctx.Done():
+			return b.errorResult(fmt.Sprintf("operation canceled: %v", ctx.Err())), nil
+		default:
+		}
+
+		// 尝试等待元素出现
 		element, elemErr := page.Element(selector)
 		if elemErr != nil {
-			return b.errorResult(fmt.Sprintf("element not found: %v", elemErr)), nil
-		}
-		text, err = element.Text()
-	}
+			// 如果元素没找到，尝试等待一下再重试
+			select {
+			case <-ctx.Done():
+				return b.errorResult(fmt.Sprintf("operation canceled: %v", ctx.Err())), nil
+			case <-time.After(3 * time.Second):
+			}
 
-	if err != nil {
-		return b.errorResult(fmt.Sprintf("failed to get text: %v", err)), nil
+			element, elemErr = page.Element(selector)
+			if elemErr != nil {
+				return b.errorResult(fmt.Sprintf("element not found after retry: %v", elemErr)), nil
+			}
+		}
+
+		// 再次检查上下文是否已取消
+		select {
+		case <-ctx.Done():
+			return b.errorResult(fmt.Sprintf("operation canceled: %v", ctx.Err())), nil
+		default:
+		}
+
+		text, err = element.Text()
+		if err != nil {
+			return b.errorResult(fmt.Sprintf("failed to get text: %v", err)), nil
+		}
 	}
 
 	return map[string]any{
@@ -236,6 +280,13 @@ func (b *BrowserTool) getText(ctx context.Context, selector string) (map[string]
 
 // getHTML 获取元素 HTML
 func (b *BrowserTool) getHTML(ctx context.Context, selector string) (map[string]any, error) {
+	// 检查上下文是否已取消
+	select {
+	case <-ctx.Done():
+		return b.errorResult(fmt.Sprintf("operation canceled: %v", ctx.Err())), nil
+	default:
+	}
+
 	page := b.browser.MustPage()
 	defer page.Close()
 
@@ -246,10 +297,25 @@ func (b *BrowserTool) getHTML(ctx context.Context, selector string) (map[string]
 		// 获取整个页面的 HTML
 		html, err = page.HTML()
 	} else {
+		// 检查上下文是否已取消
+		select {
+		case <-ctx.Done():
+			return b.errorResult(fmt.Sprintf("operation canceled: %v", ctx.Err())), nil
+		default:
+		}
+
 		element, elemErr := page.Element(selector)
 		if elemErr != nil {
 			return b.errorResult(fmt.Sprintf("element not found: %v", elemErr)), nil
 		}
+
+		// 再次检查上下文是否已取消
+		select {
+		case <-ctx.Done():
+			return b.errorResult(fmt.Sprintf("operation canceled: %v", ctx.Err())), nil
+		default:
+		}
+
 		html, err = element.HTML()
 	}
 
@@ -266,6 +332,13 @@ func (b *BrowserTool) getHTML(ctx context.Context, selector string) (map[string]
 
 // screenshot 截图
 func (b *BrowserTool) screenshot(ctx context.Context) (map[string]any, error) {
+	// 检查上下文是否已取消
+	select {
+	case <-ctx.Done():
+		return b.errorResult(fmt.Sprintf("operation canceled: %v", ctx.Err())), nil
+	default:
+	}
+
 	page := b.browser.MustPage()
 	defer page.Close()
 

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"openmanus-go/pkg/llm"
+
 	"github.com/spf13/viper"
 )
 
@@ -16,6 +17,7 @@ type Config struct {
 	Server  ServerConfig  `mapstructure:"server"`
 	Storage StorageConfig `mapstructure:"storage"`
 	Tools   ToolsConfig   `mapstructure:"tools"`
+	Logging LoggingConfig `mapstructure:"logging"`
 }
 
 // LLMConfig LLM 配置
@@ -99,6 +101,13 @@ type ToolsConfig struct {
 	} `mapstructure:"database"`
 }
 
+// LoggingConfig 日志配置
+type LoggingConfig struct {
+	Level    string `mapstructure:"level"`
+	Output   string `mapstructure:"output"`    // console | file | both
+	FilePath string `mapstructure:"file_path"` // 日志文件路径
+}
+
 // DefaultConfig 返回默认配置
 func DefaultConfig() *Config {
 	return &Config{
@@ -155,6 +164,11 @@ func DefaultConfig() *Config {
 				Timeout:   30,
 				UserAgent: "OpenManus-Go/1.0",
 			},
+		},
+		Logging: LoggingConfig{
+			Level:    "info",
+			Output:   "console",
+			FilePath: "./log/openmanus.log",
 		},
 	}
 }
@@ -259,6 +273,7 @@ func (c *Config) Save(path string) error {
 	viper.Set("server", c.Server)
 	viper.Set("storage", c.Storage)
 	viper.Set("tools", c.Tools)
+	viper.Set("logging", c.Logging)
 
 	return viper.WriteConfig()
 }
@@ -326,5 +341,13 @@ dsn = "user:password@tcp(localhost:3306)/dbname"
 [tools.database.redis]
 addr = "localhost:6379"
 password = ""
-db = 0`
+db = 0
+
+[logging]
+# level: debug | info | warn | error
+level = "info"
+# output: console | file | both
+output = "console"
+# file_path used when output contains file
+file_path = "./log/openmanus.log"`
 }
