@@ -11,6 +11,7 @@ import (
 	"openmanus-go/pkg/config"
 	"openmanus-go/pkg/llm"
 	"openmanus-go/pkg/logger"
+	"openmanus-go/pkg/mcp/transport"
 	"openmanus-go/pkg/tool"
 	"openmanus-go/pkg/tool/builtin"
 
@@ -78,6 +79,19 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("goal is required in non-interactive mode")
 	}
 
+	// 创建上下文
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create a channel to receive goals from MCP servers
+	mcpEvents := make(chan string, 10)
+
+	// 初始化并启动 MCP 传输管理器
+	// mcpManager := transport.NewManager(cfg.MCP, BuildMCPMessageHandler(mcpEvents))
+	mcpManager := transport.NewManagerWithFactory(cfg.MCP, BuildServerAwareMCPHandlerFactory(mcpEvents))
+	mcpManager.StartAll(ctx)
+	defer mcpManager.StopAll()
+
 	// 创建 LLM 客户端
 	llmClient := llm.NewOpenAIClient(cfg.ToLLMConfig())
 
@@ -105,9 +119,23 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	// 创建 Agent
 	baseAgent := agent.NewBaseAgent(llmClient, toolRegistry, agentConfig)
 
-	// 创建上下文
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// 后台处理来自 MCP 的事件，触发 Agent 执行
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case g := <-mcpEvents:
+				logger.Infof("[MCP] Triggered goal: %s", g)
+				res, err := baseAgent.Loop(ctx, g)
+				if err != nil {
+					logger.Errorf("[MCP] Agent error: %v", err)
+					continue
+				}
+				logger.Infof("[MCP] Agent result:\n%s", res)
+			}
+		}
+	}()
 
 	// 设置信号处理
 	sigChan := make(chan os.Signal, 1)
@@ -119,7 +147,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	}()
 
 	if interactive {
-		return runInteractiveMode(ctx, baseAgent, cmd)
+		return runInteractiveMode(ctx, baseAgent, cmd, mcpEvents)
 	} else {
 		return runSingleGoal(ctx, baseAgent, goal, cmd)
 	}
@@ -156,7 +184,7 @@ func runSingleGoal(ctx context.Context, agent agent.Agent, goal string, cmd *cob
 	return nil
 }
 
-func runInteractiveMode(ctx context.Context, agent agent.Agent, cmd *cobra.Command) error {
+func runInteractiveMode(ctx context.Context, agent agent.Agent, cmd *cobra.Command, mcpEvents <-chan string) error {
 	logger.Info("🤖 OpenManus-Go Interactive Mode")
 	logger.Info("Type your goals and press Enter. Type 'quit' or 'exit' to stop.")
 	logger.Info("Commands: /help, /status, /trace, /config")

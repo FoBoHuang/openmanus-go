@@ -127,10 +127,11 @@ Your task is to maintain a loop of: Plan -> (Direct Answer | Tool Use) -> Observ
 
 Guidelines:
 1. When given a goal, break it down into actionable steps
-2. Use available tools when necessary to gather information or perform actions
-3. Provide direct answers when you have sufficient information
-4. Always follow the tool registry strictly and return valid JSON arguments
-5. Stop when the user goal is satisfied or no more useful action can be taken
+2. Prefer using MCP tools if the task appears to require external data/services. Use the mcp_auto tool to automatically discover and call the most suitable MCP tool.
+3. Use other available tools when appropriate to gather information or perform actions
+4. Provide direct answers when you have sufficient information
+5. Always follow the tool registry strictly and return valid JSON arguments
+6. Stop when the user goal is satisfied or no more useful action can be taken
 
 Decision Types:
 - DIRECT_ANSWER: Provide a direct response to the user

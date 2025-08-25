@@ -8,6 +8,7 @@ require (
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/gocolly/colly/v2 v2.1.0
 	github.com/google/uuid v1.6.0
+	github.com/r3labs/sse/v2 v2.10.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	go.uber.org/zap v1.27.0
@@ -52,6 +53,7 @@ require (
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
+	gopkg.in/cenkalti/backoff.v1 v1.1.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -75,3 +75,8 @@ dsn = ""  # 设置为空字符串以禁用MySQL工具
 addr = "localhost:6379"
 password = ""
 db = 0
+
+[mcp]
+  [mcp.servers]
+    [mcp.servers.mcp-stock-helper]
+      url = "https://mcp.higress.ai/mcp-stock-helper/cmemfn9hv008u9901gm0w3uxq"

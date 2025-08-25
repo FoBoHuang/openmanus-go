@@ -15,9 +15,10 @@ import (
 // BrowserTool 浏览器自动化工具
 type BrowserTool struct {
 	*tool.BaseTool
-	browser  *rod.Browser
-	headless bool
-	timeout  time.Duration
+	browser     *rod.Browser
+	currentPage *rod.Page
+	headless    bool
+	timeout     time.Duration
 }
 
 // NewBrowserTool 创建浏览器工具
@@ -66,10 +67,11 @@ func NewBrowserTool(headless bool, timeout time.Duration) (*BrowserTool, error) 
 	}
 
 	return &BrowserTool{
-		BaseTool: baseTool,
-		browser:  browser,
-		headless: headless,
-		timeout:  timeout,
+		BaseTool:    baseTool,
+		browser:     browser,
+		currentPage: nil,
+		headless:    headless,
+		timeout:     timeout,
 	}, nil
 }
 
@@ -131,19 +133,21 @@ func (b *BrowserTool) navigate(ctx context.Context, url string) (map[string]any,
 		return b.errorResult("url is required for navigate operation"), nil
 	}
 
-	page := b.browser.MustPage()
-	defer page.Close()
+	// 如果没有当前页面，创建一个新的
+	if b.currentPage == nil {
+		b.currentPage = b.browser.MustPage()
+	}
 
-	err := page.Navigate(url)
+	err := b.currentPage.Navigate(url)
 	if err != nil {
 		return b.errorResult(fmt.Sprintf("navigation failed: %v", err)), nil
 	}
 
 	// 等待页面加载
-	page.MustWaitLoad()
+	b.currentPage.MustWaitLoad()
 
-	title := page.MustInfo().Title
-	currentURL := page.MustInfo().URL
+	title := b.currentPage.MustInfo().Title
+	currentURL := b.currentPage.MustInfo().URL
 
 	return map[string]any{
 		"success": true,

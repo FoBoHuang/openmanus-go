@@ -80,6 +80,17 @@ func RegisterBuiltinTools(registry *tool.Registry, cfg *config.Config) error {
 		return fmt.Errorf("failed to register crawler tool: %w", err)
 	}
 
+	// 注册 MCP 工具（桥接外部 MCP server）
+	if err := registry.Register(NewMCPListToolsTool(cfg)); err != nil {
+		return fmt.Errorf("failed to register mcp_list_tools tool: %w", err)
+	}
+	if err := registry.Register(NewMCPCallTool(cfg)); err != nil {
+		return fmt.Errorf("failed to register mcp_call tool: %w", err)
+	}
+	if err := registry.Register(NewMCPAutoTool(cfg)); err != nil {
+		return fmt.Errorf("failed to register mcp_auto tool: %w", err)
+	}
+
 	return nil
 }
 
