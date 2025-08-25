@@ -18,6 +18,7 @@ type Config struct {
 	Storage StorageConfig `mapstructure:"storage"`
 	Tools   ToolsConfig   `mapstructure:"tools"`
 	Logging LoggingConfig `mapstructure:"logging"`
+	MCP     MCPConfig     `mapstructure:"mcp"`
 }
 
 // LLMConfig LLM 配置
@@ -108,6 +109,17 @@ type LoggingConfig struct {
 	FilePath string `mapstructure:"file_path"` // 日志文件路径
 }
 
+// MCPServerConfig represents the configuration for a single MCP server.
+type MCPServerConfig struct {
+	URL     string            `mapstructure:"url"`
+	Headers map[string]string `mapstructure:"headers"`
+}
+
+// MCPConfig holds the configuration for all MCP servers.
+type MCPConfig struct {
+	Servers map[string]MCPServerConfig `mapstructure:"servers"`
+}
+
 // DefaultConfig 返回默认配置
 func DefaultConfig() *Config {
 	return &Config{
@@ -169,6 +181,9 @@ func DefaultConfig() *Config {
 			Level:    "info",
 			Output:   "console",
 			FilePath: "./log/openmanus.log",
+		},
+		MCP: MCPConfig{
+			Servers: make(map[string]MCPServerConfig),
 		},
 	}
 }
@@ -349,5 +364,9 @@ level = "info"
 # output: console | file | both
 output = "console"
 # file_path used when output contains file
-file_path = "./log/openmanus.log"`
+file_path = "./log/openmanus.log"
+
+[mcp.servers]
+[mcp.servers.mcp-stock-helper]
+url = "https://mcp.higress.ai/mcp-stock-helper/cmemfn9hv008u9901gm0w3uxq/sse"`
 }
