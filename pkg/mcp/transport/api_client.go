@@ -45,8 +45,14 @@ func ListTools(ctx context.Context, serverName string, cfg config.MCPServerConfi
 	for k, v := range headers {
 		merged[k] = v
 	}
-	if _, _, err := PostJSON(ctx, msgURL, body, merged); err != nil {
+	if _, respBody, err := PostJSON(ctx, msgURL, body, merged); err != nil {
 		return nil, err
+	} else if len(respBody) > 0 {
+		if msg, err := mcp.FromJSON(respBody); err == nil && msg != nil {
+			if msg.ID == nil || *msg.ID == reqID || msg.IsResponse() || msg.IsError() {
+				return msg, nil
+			}
+		}
 	}
 	return GlobalDispatcher.Wait(ctx, reqID, 30*time.Second)
 }
@@ -66,8 +72,14 @@ func CallTool(ctx context.Context, serverName string, cfg config.MCPServerConfig
 	for k, v := range headers {
 		merged[k] = v
 	}
-	if _, _, err := PostJSON(ctx, msgURL, body, merged); err != nil {
+	if _, respBody, err := PostJSON(ctx, msgURL, body, merged); err != nil {
 		return nil, err
+	} else if len(respBody) > 0 {
+		if msg, err := mcp.FromJSON(respBody); err == nil && msg != nil {
+			if msg.ID == nil || *msg.ID == reqID || msg.IsResponse() || msg.IsError() {
+				return msg, nil
+			}
+		}
 	}
 	return GlobalDispatcher.Wait(ctx, reqID, 30*time.Second)
 }

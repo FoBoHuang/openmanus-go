@@ -144,10 +144,16 @@ func (b *BrowserTool) navigate(ctx context.Context, url string) (map[string]any,
 	}
 
 	// 等待页面加载
-	b.currentPage.MustWaitLoad()
+	if err := b.currentPage.WaitLoad(); err != nil {
+		return b.errorResult(fmt.Sprintf("page load timeout: %v", err)), nil
+	}
 
-	title := b.currentPage.MustInfo().Title
-	currentURL := b.currentPage.MustInfo().URL
+	info, ierr := b.currentPage.Info()
+	if ierr != nil {
+		return b.errorResult(fmt.Sprintf("failed to get page info: %v", ierr)), nil
+	}
+	title := info.Title
+	currentURL := info.URL
 
 	return map[string]any{
 		"success": true,
