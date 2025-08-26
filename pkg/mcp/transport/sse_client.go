@@ -67,15 +67,29 @@ func (c *SSEClient) connectAndSubscribe(ctx context.Context) {
 	// sse.Client.Subscribe a new connection every time
 	c.client = sse.NewClient(ensureSSEPath(c.config.URL))
 
-	err := c.client.Subscribe("messages", func(event *sse.Event) {
+	// Subscribe to default stream: some servers don't use a named "messages" channel
+	err := c.client.Subscribe("", func(event *sse.Event) {
 		if len(event.Data) == 0 {
 			return
 		}
-		logger.Debugf("Received SSE event: %s", string(event.Data))
 
-		msg, err := mcp.FromJSON(event.Data)
+		// 清理数据，移除可能的 HTML 标签和注释
+		data := strings.TrimSpace(string(event.Data))
+		if data == "" {
+			return
+		}
+
+		// 检查是否是有效的 JSON 开始
+		if !strings.HasPrefix(data, "{") && !strings.HasPrefix(data, "[") {
+			logger.Debugf("Skipping non-JSON SSE event: %s", data[:min(len(data), 100)])
+			return
+		}
+
+		logger.Debugf("Received SSE event: %s", data[:min(len(data), 200)])
+
+		msg, err := mcp.FromJSON([]byte(data))
 		if err != nil {
-			logger.Errorf("Failed to parse MCP message from SSE event: %v", err)
+			logger.Errorf("Failed to parse MCP message from SSE event: %v, data: %s", err, data[:min(len(data), 100)])
 			return
 		}
 
@@ -144,4 +158,12 @@ func ensureSSEPath(u string) string {
 		return u + "sse"
 	}
 	return u + "/sse"
+}
+
+// min 返回两个整数中的较小值
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

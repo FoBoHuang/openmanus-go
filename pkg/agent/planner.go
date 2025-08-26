@@ -51,10 +51,10 @@ func (p *Planner) Plan(ctx context.Context, goal string, trace *state.Trace) (st
 	tools := p.buildLLMTools()
 
 	// 调试信息
-	logger.Get().Sugar().Debugf("Tools count: %d", len(tools))
-	for i, tool := range tools {
-		logger.Get().Sugar().Debugf("Tool %d: %s - %s", i, tool.Function.Name, tool.Function.Description)
-	}
+	// logger.Get().Sugar().Debugf("Tools count: %d", len(tools))
+	// for i, tool := range tools {
+	// 	logger.Get().Sugar().Debugf("Tool %d: %s - %s", i, tool.Function.Name, tool.Function.Description)
+	// }
 
 	// 创建请求
 	req := &llm.ChatRequest{
