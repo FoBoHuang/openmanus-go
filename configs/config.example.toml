@@ -1,77 +1,114 @@
 # OpenManus-Go Configuration Example
 # Copy this file to config.toml and customize as needed
+#
+# 🔧 Quick Setup:
+#   1. Copy: cp configs/config.example.toml configs/config.toml
+#   2. Edit: Set your LLM API key and other required settings
+#   3. Run: ./bin/openmanus run --config configs/config.toml
+#
+# 🐳 Docker Environment:
+#   - Use environment variables for sensitive data
+#   - Set host = "0.0.0.0" for container deployment
+#   - Use service names for Redis/MySQL addresses (e.g., "redis:6379")
 
 [llm]
-model = "gpt-3.5-turbo"
-base_url = "https://api.openai.com/v1"
-api_key = "your-api-key-here"  # 🔑 REQUIRED: Set your OpenAI API key
-temperature = 0.1
-max_tokens = 4000
-timeout = 30
+# 推荐模型配置 (Recommended models)
+model = "deepseek-chat"                    # 或 "gpt-3.5-turbo", "gpt-4", "claude-3-sonnet"
+base_url = "https://api.deepseek.com/v1"   # 或使用环境变量: "${OPENMANUS_LLM_BASE_URL}"
+api_key = "your-api-key-here"              # 🔑 REQUIRED: 必须设置 API key
+temperature = 0.1                          # 生成温度 (0.0-1.0)
+max_tokens = 4000                          # 最大令牌数
+timeout = 60                               # 请求超时时间 (秒)
 
 [agent]
-max_steps = 10
-max_tokens = 8000
-max_duration = "5m"
-reflection_steps = 3
-max_retries = 2
-retry_backoff = "1s"
-
-[runflow]
-use_data_analysis_agent = false
-enable_multi_agent = false
+max_steps = 15                             # 最大执行步数
+max_tokens = 10000                         # 最大令牌预算
+max_duration = "10m"                       # 最大执行时间
+reflection_steps = 3                       # 反思步数间隔
+max_retries = 3                            # 最大重试次数
+retry_backoff = "2s"                       # 重试间隔
 
 [server]
-host = "localhost"
+host = "localhost"                         # Docker: "0.0.0.0"
 port = 8080
 
 [storage]
-type = "file"  # Options: file, memory, redis, s3
-base_path = "./data/traces"
+type = "file"                              # Options: file, memory, redis, s3
+base_path = "./data/traces"                # Docker: "/app/data/traces"
 
-# Redis storage configuration (optional)
+# Redis 存储配置 (推荐用于生产环境)
 [storage.redis]
-addr = "localhost:6379"
-password = ""
+addr = "localhost:6379"                    # Docker: "redis:6379"
+password = ""                              # 生产环境建议设置密码
 db = 0
+max_retries = 3
+dial_timeout = "5s"
+read_timeout = "3s"
+write_timeout = "3s"
 
 [logging]
-# level: debug | info | warn | error
-level = "info"
-# output: console | file | both
-output = "console"
-# file_path used when output contains file
-file_path = "./log/openmanus.log"
+level = "info"                             # debug | info | warn | error
+output = "console"                         # console | file | both
+format = "text"                            # text | json (Docker 推荐 json)
+file_path = "./logs/openmanus.log"
 
-# S3 storage configuration (optional)  
-[storage.s3]
-region = "us-east-1"
-bucket = "openmanus-traces"
-access_key = ""
-secret_key = ""
-
-# HTTP tool configuration
+# 工具配置
 [tools.http]
-timeout = 30
-allowed_domains = []  # Empty = allow all
-blocked_domains = ["localhost", "127.0.0.1"]
+timeout = 45
+max_redirects = 5
+user_agent = "OpenManus-Go/1.0"
+allowed_domains = []                       # 空数组 = 允许所有域名
+blocked_domains = ["localhost", "127.0.0.1", "169.254.169.254"]
 
-# File system tool configuration
 [tools.filesystem]
-allowed_paths = ["./workspace", "./data", "./examples"]
-blocked_paths = ["/etc", "/sys", "/proc", "/root"]
+allowed_paths = ["./workspace", "./data", "./examples"]  # Docker: ["/app/workspace", "/app/data"]
+blocked_paths = ["/etc", "/sys", "/proc", "/root", "/var"]
+max_file_size = "100MB"
 
-# Browser tool configuration
 [tools.browser]
 headless = true
-timeout = 30
+timeout = 60
 user_agent = "OpenManus-Go/1.0"
+# Docker Chrome 参数
+chrome_args = [
+  "--no-sandbox",
+  "--disable-dev-shm-usage",
+  "--disable-gpu"
+]
 
-# Database configurations (optional)
+# 数据库配置
 [tools.database.mysql]
-dsn = "user:password@tcp(localhost:3306)/dbname"
+dsn = "user:password@tcp(localhost:3306)/dbname"  # Docker: "openmanus:password@tcp(mysql:3306)/openmanus"
+max_open_conns = 10
+max_idle_conns = 5
+conn_max_lifetime = "1h"
 
 [tools.database.redis]
-addr = "localhost:6379"
+addr = "localhost:6379"                    # Docker: "redis:6379"
 password = ""
-db = 0
+db = 1                                     # 与存储使用不同的数据库
+pool_size = 10
+
+# MCP 服务器配置示例
+[[mcp_servers]]
+name = "stock-helper"
+transport = "sse"
+url = "https://mcp.higress.ai/mcp-stock-helper/your-session-id/sse"
+timeout = 30
+retry_count = 3
+
+# 可选配置
+[performance]
+worker_count = 4                           # 工作线程数
+queue_size = 100
+gc_percent = 100
+
+[monitoring]
+enabled = false                            # 生产环境建议启用
+metrics_port = 9090
+prometheus_path = "/metrics"
+
+[security]
+enable_cors = true
+cors_origins = ["*"]                       # 生产环境应限制具体域名
+cors_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]

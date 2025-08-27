@@ -8,25 +8,52 @@ services:
       dockerfile: deployments/docker/Dockerfile
     container_name: openmanus-go
     environment:
+      # LLM 配置
       - OPENMANUS_LLM_API_KEY=${OPENMANUS_LLM_API_KEY}
-      - OPENMANUS_LLM_BASE_URL=${OPENMANUS_LLM_BASE_URL:-https://api.openai.com/v1}
-      - OPENMANUS_LLM_MODEL=${OPENMANUS_LLM_MODEL:-gpt-3.5-turbo}
+      - OPENMANUS_LLM_BASE_URL=${OPENMANUS_LLM_BASE_URL:-https://api.deepseek.com/v1}
+      - OPENMANUS_LLM_MODEL=${OPENMANUS_LLM_MODEL:-deepseek-chat}
+      - OPENMANUS_LLM_TEMPERATURE=${OPENMANUS_LLM_TEMPERATURE:-0.1}
+      - OPENMANUS_LLM_MAX_TOKENS=${OPENMANUS_LLM_MAX_TOKENS:-4000}
+      
+      # Agent 配置
+      - OPENMANUS_AGENT_MAX_STEPS=${OPENMANUS_AGENT_MAX_STEPS:-10}
+      - OPENMANUS_AGENT_MAX_TOKENS=${OPENMANUS_AGENT_MAX_TOKENS:-8000}
+      - OPENMANUS_AGENT_MAX_DURATION=${OPENMANUS_AGENT_MAX_DURATION:-5m}
+      - OPENMANUS_AGENT_REFLECTION_STEPS=${OPENMANUS_AGENT_REFLECTION_STEPS:-3}
+      
+      # 存储配置
       - OPENMANUS_STORAGE_TYPE=redis
-      - OPENMANUS_TOOLS_DATABASE_REDIS_ADDR=redis:6379
+      - OPENMANUS_REDIS_ADDR=redis:6379
+      - OPENMANUS_MYSQL_DSN=openmanus:password@tcp(mysql:3306)/openmanus?charset=utf8mb4&parseTime=True&loc=Local
+      
+      # MCP 配置
+      - OPENMANUS_MCP_ENABLED=${OPENMANUS_MCP_ENABLED:-true}
+      
+      # 工具配置
+      - OPENMANUS_TOOLS_FILESYSTEM_ALLOWED_PATHS=/app/workspace,/app/data
+      - OPENMANUS_TOOLS_HTTP_TIMEOUT=30
+      
     ports:
       - "8080:8080"
     volumes:
       - ./data:/app/data
       - ./workspace:/app/workspace
-      - ./config.toml:/app/config.toml:ro
+      - ./configs/config.toml:/app/configs/config.toml:ro
+      - ./logs:/app/logs
     depends_on:
       - redis
       - mysql
     networks:
       - openmanus-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "./openmanus", "tools", "test"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
-  # Redis 缓存和存储
+  # Redis 缓存和状态存储
   redis:
     image: redis:7-alpine
     container_name: openmanus-redis
@@ -34,39 +61,66 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: >
+      redis-server 
+      --appendonly yes 
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     networks:
       - openmanus-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   # MySQL 数据库
   mysql:
     image: mysql:8.0
     container_name: openmanus-mysql
     environment:
-      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
       - MYSQL_DATABASE=openmanus
       - MYSQL_USER=openmanus
-      - MYSQL_PASSWORD=password
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-password}
+      - MYSQL_CHARSET=utf8mb4
+      - MYSQL_COLLATION=utf8mb4_unicode_ci
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./mysql/conf.d:/etc/mysql/conf.d:ro
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=256M
+      --max-connections=100
     networks:
       - openmanus-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "openmanus", "-p${MYSQL_PASSWORD:-password}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
-  # Elasticsearch (可选，用于高级搜索)
+  # Elasticsearch (可选，用于高级搜索和日志)
   elasticsearch:
-    image: elasticsearch:8.8.0
+    image: elasticsearch:8.11.0
     container_name: openmanus-elasticsearch
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.name=openmanus-cluster
+      - node.name=openmanus-node
     ports:
       - "9200:9200"
+      - "9300:9300"
     volumes:
       - es_data:/usr/share/elasticsearch/data
     networks:
@@ -74,14 +128,20 @@ services:
     restart: unless-stopped
     profiles:
       - full
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # MinIO (S3 兼容存储)
+  # MinIO (S3 兼容对象存储)
   minio:
     image: minio/minio:latest
     container_name: openmanus-minio
     environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin123}
+      - MINIO_BROWSER_REDIRECT_URL=http://localhost:9001
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -93,22 +153,41 @@ services:
     restart: unless-stopped
     profiles:
       - full
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Grafana 监控面板
   grafana:
     image: grafana/grafana:latest
     container_name: openmanus-grafana
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=redis-datasource,mysql-datasource
     ports:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+      - redis
+      - mysql
     networks:
       - openmanus-net
     restart: unless-stopped
     profiles:
       - monitoring
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Prometheus 指标收集
   prometheus:
@@ -117,18 +196,71 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
     networks:
       - openmanus-net
     restart: unless-stopped
     profiles:
       - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Jaeger 分布式追踪 (可选)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: openmanus-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger collector HTTP
+      - "14250:14250"  # Jaeger collector gRPC
+    networks:
+      - openmanus-net
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:16686/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx 反向代理 (可选)
+  nginx:
+    image: nginx:alpine
+    container_name: openmanus-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - openmanus
+    networks:
+      - openmanus-net
+    restart: unless-stopped
+    profiles:
+      - proxy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   redis_data:
@@ -147,3 +279,6 @@ volumes:
 networks:
   openmanus-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
