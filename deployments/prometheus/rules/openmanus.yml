@@ -1,0 +1,158 @@
+# OpenManus-Go Prometheus Alerting Rules
+
+groups:
+  - name: openmanus.rules
+    rules:
+      # Application Health
+      - alert: OpenManusDown
+        expr: up{job="openmanus-go"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OpenManus-Go application is down"
+          description: "OpenManus-Go application has been down for more than 1 minute."
+
+      # High Error Rate
+      - alert: HighErrorRate
+        expr: rate(openmanus_agent_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate in OpenManus-Go"
+          description: "Error rate is {{ $value }} errors per second over the last 5 minutes."
+
+      # High Response Time
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(openmanus_agent_duration_seconds_bucket[5m])) > 30
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time in OpenManus-Go"
+          description: "95th percentile response time is {{ $value }} seconds over the last 5 minutes."
+
+      # Memory Usage
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes{job="openmanus-go"} / process_virtual_memory_max_bytes > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage in OpenManus-Go"
+          description: "Memory usage is above 80% for more than 5 minutes."
+
+      # Task Queue Length
+      - alert: HighTaskQueueLength
+        expr: openmanus_task_queue_length > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High task queue length"
+          description: "Task queue length is {{ $value }}, indicating potential bottleneck."
+
+      # Failed Tasks
+      - alert: HighFailedTaskRate
+        expr: rate(openmanus_tasks_failed_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High failed task rate"
+          description: "Failed task rate is {{ $value }} failures per second over the last 5 minutes."
+
+  - name: infrastructure.rules
+    rules:
+      # Redis Health
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 1 minute."
+
+      # MySQL Health
+      - alert: MySQLDown
+        expr: up{job="mysql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL is down"
+          description: "MySQL has been down for more than 1 minute."
+
+      # High Redis Memory Usage
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis high memory usage"
+          description: "Redis memory usage is above 80%."
+
+  - name: mcp.rules
+    rules:
+      # MCP Server Connectivity
+      - alert: MCPServerDown
+        expr: openmanus_mcp_server_up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP server is down"
+          description: "MCP server {{ $labels.server_name }} has been down for more than 2 minutes."
+
+      # MCP Tool High Error Rate
+      - alert: MCPToolHighErrorRate
+        expr: rate(openmanus_mcp_tool_errors_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High MCP tool error rate"
+          description: "MCP tool {{ $labels.tool_name }} error rate is {{ $value }} errors per second."
+
+      # MCP Tool High Latency
+      - alert: MCPToolHighLatency
+        expr: histogram_quantile(0.95, rate(openmanus_mcp_tool_duration_seconds_bucket[5m])) > 10
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High MCP tool latency"
+          description: "MCP tool {{ $labels.tool_name }} 95th percentile latency is {{ $value }} seconds."
+
+  - name: performance.rules
+    rules:
+      # Recording rules for performance metrics
+      - record: openmanus:request_rate
+        expr: rate(openmanus_requests_total[5m])
+
+      - record: openmanus:error_rate
+        expr: rate(openmanus_errors_total[5m])
+
+      - record: openmanus:success_rate
+        expr: rate(openmanus_requests_total[5m]) - rate(openmanus_errors_total[5m])
+
+      - record: openmanus:response_time_p95
+        expr: histogram_quantile(0.95, rate(openmanus_duration_seconds_bucket[5m]))
+
+      - record: openmanus:response_time_p50
+        expr: histogram_quantile(0.50, rate(openmanus_duration_seconds_bucket[5m]))
+
+      - record: openmanus:task_completion_rate
+        expr: rate(openmanus_tasks_completed_total[5m])
+
+      - record: openmanus:task_failure_rate
+        expr: rate(openmanus_tasks_failed_total[5m])
+
+      - record: openmanus:mcp_tool_usage_rate
+        expr: rate(openmanus_mcp_tool_calls_total[5m])
+
+      - record: openmanus:memory_usage_ratio
+        expr: process_resident_memory_bytes / process_virtual_memory_max_bytes

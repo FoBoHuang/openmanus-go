@@ -39,8 +39,6 @@ It supports:
 
 	// 添加子命令
 	rootCmd.AddCommand(commands.NewRunCommand())
-	rootCmd.AddCommand(commands.NewMCPCommand())
-	rootCmd.AddCommand(commands.NewFlowCommand())
 	rootCmd.AddCommand(commands.NewConfigCommand())
 	rootCmd.AddCommand(commands.NewToolsCommand())
 

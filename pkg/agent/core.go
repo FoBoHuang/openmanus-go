@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"openmanus-go/pkg/config"
 	"openmanus-go/pkg/llm"
 	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/state"
@@ -41,6 +42,9 @@ type BaseAgent struct {
 	memory       *Memory
 	reflector    *Reflector
 	config       *Config
+	mcpExecutor  *MCPExecutor            // MCP 执行器
+	taskAnalyzer *TaskCompletionAnalyzer // 任务完成度分析器
+	taskManager  *TaskManager            // 多步任务管理器
 }
 
 // Config Agent 配置
@@ -81,6 +85,8 @@ func NewBaseAgent(llmClient llm.Client, toolRegistry *tool.Registry, config *Con
 	planner := NewPlanner(llmClient, toolRegistry)
 	memory := NewMemory()
 	reflector := NewReflector(llmClient)
+	taskAnalyzer := NewTaskCompletionAnalyzer(llmClient)
+	taskManager := NewTaskManager(llmClient)
 
 	return &BaseAgent{
 		llmClient:    llmClient,
@@ -89,6 +95,75 @@ func NewBaseAgent(llmClient llm.Client, toolRegistry *tool.Registry, config *Con
 		memory:       memory,
 		reflector:    reflector,
 		config:       config,
+		taskAnalyzer: taskAnalyzer,
+		taskManager:  taskManager,
+	}
+}
+
+// NewBaseAgentWithMCP 创建带 MCP 功能的基础 Agent
+func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agentConfig *Config, appConfig *config.Config) *BaseAgent {
+	if agentConfig == nil {
+		agentConfig = DefaultConfig()
+	}
+
+	if toolRegistry == nil {
+		toolRegistry = tool.DefaultRegistry
+	}
+
+	// 创建基础组件
+	toolExecutor := tool.NewExecutor(toolRegistry, 30*time.Second)
+	memory := NewMemory()
+	reflector := NewReflector(llmClient)
+
+	// 尝试创建 MCP 组件
+	var planner *Planner
+	if appConfig != nil && len(appConfig.MCP.Servers) > 0 {
+		// 创建 MCP 发现服务
+		mcpDiscovery := NewMCPDiscoveryService(appConfig)
+
+		// 创建 MCP 选择器
+		mcpSelector := NewMCPToolSelector(mcpDiscovery, llmClient)
+
+		// 创建 MCP 执行器
+		mcpExecutor := NewMCPExecutor(appConfig, mcpDiscovery)
+
+		// 创建带 MCP 功能的规划器
+		planner = NewPlannerWithMCP(llmClient, toolRegistry, mcpDiscovery, mcpSelector, mcpExecutor)
+
+		// 启动 MCP 发现服务
+		go func() {
+			ctx := context.Background()
+			if err := mcpDiscovery.Start(ctx); err != nil {
+				logger.Get().Sugar().Warnw("Failed to start MCP discovery service", "error", err)
+			}
+		}()
+
+		return &BaseAgent{
+			llmClient:    llmClient,
+			toolExecutor: toolExecutor,
+			planner:      planner,
+			memory:       memory,
+			reflector:    reflector,
+			config:       agentConfig,
+			mcpExecutor:  mcpExecutor,
+			taskAnalyzer: NewTaskCompletionAnalyzer(llmClient),
+			taskManager:  NewTaskManager(llmClient),
+		}
+	}
+
+	// 如果没有 MCP 配置，使用标准规划器
+	planner = NewPlanner(llmClient, toolRegistry)
+
+	return &BaseAgent{
+		llmClient:    llmClient,
+		toolExecutor: toolExecutor,
+		planner:      planner,
+		memory:       memory,
+		reflector:    reflector,
+		config:       agentConfig,
+		mcpExecutor:  nil,
+		taskAnalyzer: NewTaskCompletionAnalyzer(llmClient),
+		taskManager:  NewTaskManager(llmClient),
 	}
 }
 
@@ -99,6 +174,12 @@ func (a *BaseAgent) Plan(ctx context.Context, goal string, trace *state.Trace) (
 
 // Act 执行动作
 func (a *BaseAgent) Act(ctx context.Context, action state.Action) (*state.Observation, error) {
+	// 检查是否为 MCP 工具调用
+	if action.Name == "mcp_call" && a.mcpExecutor != nil {
+		return a.mcpExecutor.ExecuteTool(ctx, action)
+	}
+
+	// 使用标准工具执行器
 	return a.toolExecutor.Execute(ctx, action)
 }
 
@@ -119,19 +200,158 @@ func (a *BaseAgent) ShouldStop(trace *state.Trace) bool {
 		return true
 	}
 
-	// 检查最近的步骤是否表明应该停止
+	// 检查最近的步骤是否明确表明应该停止
 	if len(trace.Steps) > 0 {
 		lastStep := trace.Steps[len(trace.Steps)-1]
-		if lastStep.Action.Name == "stop" || lastStep.Action.Name == "direct_answer" {
+
+		// 只有明确的 stop 动作才立即停止
+		if lastStep.Action.Name == "stop" {
 			return true
 		}
+
+		// 对于 direct_answer，我们需要使用任务完成度分析来决定
+		// 这里不再直接停止，而是让循环继续，由 Loop 方法来处理
 	}
 
 	return false
 }
 
-// Loop 执行完整的控制循环
+// LoopWithTaskManagement 使用多步任务管理的执行循环
+func (a *BaseAgent) LoopWithTaskManagement(ctx context.Context, goal string) (string, error) {
+	logger.Infow("agent.task_loop.start", "goal", goal)
+
+	// 第一步：分解目标为子任务
+	plan, err := a.taskManager.DecomposeGoal(ctx, goal)
+	if err != nil {
+		logger.Errorw("Failed to decompose goal", "error", err)
+		return "", fmt.Errorf("goal decomposition failed: %w", err)
+	}
+
+	logger.Infow("agent.task_loop.plan_created",
+		"plan_id", plan.ID,
+		"subtasks", len(plan.SubTasks),
+		"execution_order", plan.ExecutionOrder)
+
+	// 创建执行轨迹
+	trace := &state.Trace{
+		Goal:  goal,
+		Steps: []state.Step{},
+		Budget: state.Budget{
+			MaxSteps:    a.config.MaxSteps * len(plan.SubTasks), // 扩展预算以支持多任务
+			MaxTokens:   a.config.MaxTokens,
+			MaxDuration: a.config.MaxDuration,
+			StartTime:   time.Now(),
+		},
+		Status:    state.TraceStatusRunning,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// 执行任务循环
+	for !a.taskManager.IsAllTasksCompleted() && !a.ShouldStop(trace) {
+		select {
+		case <-ctx.Done():
+			trace.Status = state.TraceStatusCanceled
+			logger.Warnw("agent.task_loop.canceled", "goal", goal)
+			return "", ctx.Err()
+		default:
+		}
+
+		// 获取下一个要执行的任务
+		nextTask := a.taskManager.GetNextTask()
+		if nextTask == nil {
+			logger.Warnw("No next task available but not all tasks completed")
+			break
+		}
+
+		logger.Infow("agent.task_loop.executing_task",
+			"task_id", nextTask.ID,
+			"task_title", nextTask.Title,
+			"task_type", nextTask.Type)
+
+		// 标记任务为进行中
+		a.taskManager.UpdateTaskStatus(nextTask.ID, TaskStatusInProgress, nil, nil)
+
+		// 执行单个任务
+		taskResult, err := a.executeSubTask(ctx, nextTask, trace)
+		if err != nil {
+			logger.Errorw("Task execution failed",
+				"task_id", nextTask.ID,
+				"error", err)
+			a.taskManager.UpdateTaskStatus(nextTask.ID, TaskStatusFailed, nil, nil)
+			continue // 继续执行其他任务
+		}
+
+		// 标记任务完成
+		evidence := []string{fmt.Sprintf("subtask_completed:%s", nextTask.ID)}
+		a.taskManager.UpdateTaskStatus(nextTask.ID, TaskStatusCompleted, taskResult, evidence)
+
+		logger.Infow("agent.task_loop.task_completed",
+			"task_id", nextTask.ID,
+			"task_title", nextTask.Title)
+
+		// 检查是否所有任务都已完成
+		if a.taskManager.IsAllTasksCompleted() {
+			logger.Infow("agent.task_loop.all_tasks_completed")
+			break
+		}
+	}
+
+	// 生成最终结果
+	summary := a.taskManager.GetCompletionSummary()
+	if summary["all_completed"].(bool) {
+		trace.Status = state.TraceStatusCompleted
+		finalResult := a.generateTaskCompletionSummary(plan, summary)
+		logger.Infow("agent.task_loop.success",
+			"completion_rate", summary["completion_rate"],
+			"total_tasks", summary["total_tasks"])
+		return finalResult, nil
+	} else {
+		trace.Status = state.TraceStatusFailed
+		logger.Warnw("agent.task_loop.incomplete",
+			"completion_rate", summary["completion_rate"],
+			"pending_tasks", summary["pending"],
+			"failed_tasks", summary["failed"])
+		return a.generateTaskCompletionSummary(plan, summary), nil
+	}
+}
+
+// Loop 执行完整的控制循环（保持向后兼容）
 func (a *BaseAgent) Loop(ctx context.Context, goal string) (string, error) {
+	// 智能选择执行模式
+	if a.isComplexGoal(goal) {
+		logger.Infow("agent.loop.using_task_management", "goal", goal)
+		return a.LoopWithTaskManagement(ctx, goal)
+	}
+
+	// 对于简单目标，使用原有逻辑
+	logger.Infow("agent.loop.using_standard_mode", "goal", goal)
+	return a.standardLoop(ctx, goal)
+}
+
+// isComplexGoal 判断是否为复杂目标
+func (a *BaseAgent) isComplexGoal(goal string) bool {
+	goalLower := strings.ToLower(goal)
+
+	// 检测多步任务的关键词
+	multiStepKeywords := []string{"并", "然后", "and", "also", "additionally", "保存", "写入", "文件", "总结", "分析"}
+	keywordCount := 0
+
+	for _, keyword := range multiStepKeywords {
+		if strings.Contains(goalLower, keyword) {
+			keywordCount++
+		}
+	}
+
+	// 如果包含多个关键词，或者明确包含文件操作，认为是复杂目标
+	return keywordCount >= 2 ||
+		strings.Contains(goalLower, "保存") ||
+		strings.Contains(goalLower, "写入") ||
+		strings.Contains(goalLower, "文件")
+}
+
+// standardLoop 标准执行循环（原有逻辑）
+func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, error) {
 	// 创建初始轨迹
 	trace := &state.Trace{
 		Goal:  goal,
@@ -173,12 +393,50 @@ func (a *BaseAgent) Loop(ctx context.Context, goal string) (string, error) {
 		// 添加步骤到轨迹
 		_ = trace.AddStep(action)
 
-		// 处理直接回答
+		// 处理直接回答 - 使用任务完成度分析来验证
 		if action.Name == "direct_answer" {
-			finalResult = getStringFromArgs(action.Args, "answer")
-			trace.Status = state.TraceStatusCompleted
-			logger.Infow("agent.answer", "result_preview", previewString(finalResult, 160))
-			break
+			potentialResult := getStringFromArgs(action.Args, "answer")
+
+			// 使用任务完成度分析器来验证任务是否真正完成
+			if a.taskAnalyzer != nil {
+				completionResult, err := a.taskAnalyzer.AnalyzeTaskCompletion(ctx, goal, trace)
+				if err != nil {
+					logger.Warnw("Task completion analysis failed, accepting direct answer", "error", err)
+					finalResult = potentialResult
+					trace.Status = state.TraceStatusCompleted
+					break
+				}
+
+				if completionResult.IsComplete {
+					// 任务确实完成了
+					finalResult = potentialResult
+					trace.Status = state.TraceStatusCompleted
+					logger.Infow("agent.answer.verified",
+						"result_preview", previewString(finalResult, 160),
+						"completed_tasks", len(completionResult.CompletedTasks),
+						"confidence", completionResult.Confidence)
+					break
+				} else {
+					// 任务还未完成，继续执行
+					logger.Infow("agent.answer.incomplete",
+						"pending_tasks", len(completionResult.PendingTasks),
+						"reason", completionResult.Reason,
+						"suggested_action", completionResult.SuggestedAction)
+
+					// 不执行 direct_answer，而是继续循环让 Agent 完成剩余任务
+					// 移除最后一个 direct_answer 步骤，因为任务未完成
+					if len(trace.Steps) > 0 {
+						trace.Steps = trace.Steps[:len(trace.Steps)-1]
+					}
+					continue
+				}
+			} else {
+				// 如果没有任务分析器，使用原来的逻辑
+				finalResult = potentialResult
+				trace.Status = state.TraceStatusCompleted
+				logger.Infow("agent.answer", "result_preview", previewString(finalResult, 160))
+				break
+			}
 		}
 
 		// 处理停止指令
@@ -210,8 +468,8 @@ func (a *BaseAgent) Loop(ctx context.Context, goal string) (string, error) {
 		// 更新观测结果
 		trace.UpdateObservation(observation)
 
-		// 定期进行反思
-		if len(trace.Steps)%a.config.ReflectionSteps == 0 {
+		// 定期进行反思 (避免除零错误)
+		if a.config.ReflectionSteps > 0 && len(trace.Steps)%a.config.ReflectionSteps == 0 {
 			logger.Debugw("agent.reflect.start", "steps", len(trace.Steps))
 			reflection, err := a.Reflect(ctx, trace)
 			if err == nil && reflection.ShouldStop {
@@ -271,6 +529,151 @@ func (a *BaseAgent) generateSummary(trace *state.Trace) string {
 	}
 
 	return summary.String()
+}
+
+// executeSubTask 执行单个子任务
+func (a *BaseAgent) executeSubTask(ctx context.Context, task *SubTask, trace *state.Trace) (map[string]any, error) {
+	logger.Infow("agent.subtask.start", "task_id", task.ID, "task_type", task.Type)
+
+	// 构建针对子任务的目标
+	subGoal := fmt.Sprintf("%s: %s", task.Title, task.Description)
+
+	// 限制子任务的步数，避免无限循环
+	maxSubSteps := 3
+	stepCount := 0
+
+	for stepCount < maxSubSteps {
+		// 规划单步动作
+		action, err := a.Plan(ctx, subGoal, trace)
+		if err != nil {
+			return nil, fmt.Errorf("planning failed for subtask %s: %w", task.ID, err)
+		}
+
+		logger.Infow("agent.subtask.action", "task_id", task.ID, "action", action.Name)
+
+		// 添加步骤到轨迹
+		_ = trace.AddStep(action)
+		stepCount++
+
+		// 执行动作
+		observation, err := a.Act(ctx, action)
+		if err != nil {
+			observation = &state.Observation{
+				Tool:   action.Name,
+				ErrMsg: err.Error(),
+			}
+		}
+
+		// 更新观测结果
+		trace.UpdateObservation(observation)
+
+		// 检查是否成功完成
+		if observation != nil && observation.ErrMsg == "" {
+			// 根据任务类型判断是否完成
+			if a.isSubTaskCompleted(task, action, observation) {
+				result := map[string]any{
+					"action":      action.Name,
+					"args":        action.Args,
+					"observation": observation.Output,
+				}
+				logger.Infow("agent.subtask.completed", "task_id", task.ID, "action", action.Name)
+				return result, nil
+			}
+		}
+
+		// 如果是direct_answer，也认为任务完成
+		if action.Name == "direct_answer" {
+			result := map[string]any{
+				"action": action.Name,
+				"answer": getStringFromArgs(action.Args, "answer"),
+			}
+			return result, nil
+		}
+	}
+
+	return nil, fmt.Errorf("subtask %s exceeded maximum steps (%d)", task.ID, maxSubSteps)
+}
+
+// isSubTaskCompleted 判断子任务是否完成
+func (a *BaseAgent) isSubTaskCompleted(task *SubTask, action state.Action, observation *state.Observation) bool {
+	switch task.Type {
+	case "data_collection":
+		// 数据收集任务：成功的crawler、http调用
+		return action.Name == "crawler" || action.Name == "http" || action.Name == "http_client"
+
+	case "file_operation":
+		// 文件操作任务：成功的fs、file_copy调用
+		return action.Name == "fs" || action.Name == "file_copy"
+
+	case "content_generation":
+		// 内容生成任务：direct_answer或成功的分析调用
+		return action.Name == "direct_answer"
+
+	case "analysis":
+		// 分析任务：任何成功的工具调用
+		return observation.ErrMsg == ""
+
+	default:
+		// 其他任务：任何成功的工具调用
+		return observation.ErrMsg == ""
+	}
+}
+
+// generateTaskCompletionSummary 生成任务完成摘要
+func (a *BaseAgent) generateTaskCompletionSummary(plan *TaskPlan, summary map[string]any) string {
+	var result strings.Builder
+
+	result.WriteString(fmt.Sprintf("## 任务执行摘要\n\n"))
+	result.WriteString(fmt.Sprintf("**原始目标**: %s\n\n", plan.OriginalGoal))
+
+	completionRate := summary["completion_rate"].(float64)
+	result.WriteString(fmt.Sprintf("**完成进度**: %.1f%% (%d/%d 个子任务)\n\n",
+		completionRate, summary["completed"], summary["total_tasks"]))
+
+	// 列出已完成的任务
+	if summary["completed"].(int) > 0 {
+		result.WriteString("### ✅ 已完成的任务:\n")
+		for _, task := range plan.SubTasks {
+			if task.Status == TaskStatusCompleted {
+				result.WriteString(fmt.Sprintf("- **%s**: %s\n", task.Title, task.Description))
+				if len(task.Evidence) > 0 {
+					result.WriteString(fmt.Sprintf("  - 证据: %s\n", strings.Join(task.Evidence, ", ")))
+				}
+			}
+		}
+		result.WriteString("\n")
+	}
+
+	// 列出失败的任务
+	if summary["failed"].(int) > 0 {
+		result.WriteString("### ❌ 失败的任务:\n")
+		for _, task := range plan.SubTasks {
+			if task.Status == TaskStatusFailed {
+				result.WriteString(fmt.Sprintf("- **%s**: %s\n", task.Title, task.Description))
+			}
+		}
+		result.WriteString("\n")
+	}
+
+	// 列出待完成的任务
+	if summary["pending"].(int) > 0 {
+		result.WriteString("### ⏳ 待完成的任务:\n")
+		for _, task := range plan.SubTasks {
+			if task.Status == TaskStatusPending || task.Status == TaskStatusInProgress {
+				result.WriteString(fmt.Sprintf("- **%s**: %s\n", task.Title, task.Description))
+			}
+		}
+		result.WriteString("\n")
+	}
+
+	// 总结
+	if summary["all_completed"].(bool) {
+		result.WriteString("🎉 **所有任务已成功完成！**")
+	} else {
+		result.WriteString("⚠️ **任务未完全完成，请检查失败或待完成的任务。**")
+	}
+
+	return result.String()
 }
 
 // getStringFromArgs 从参数中获取字符串值

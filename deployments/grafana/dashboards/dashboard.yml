@@ -1,0 +1,23 @@
+# OpenManus-Go Grafana Dashboard Provisioning Configuration
+
+apiVersion: 1
+
+providers:
+  # Dashboard provider for OpenManus-Go
+  - name: 'openmanus-dashboards'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: true
+
+  # External dashboards (optional)
+  - name: 'external-dashboards'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/external

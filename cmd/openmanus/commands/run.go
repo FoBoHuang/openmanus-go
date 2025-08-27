@@ -116,8 +116,8 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		agentConfig.MaxTokens = maxTokens
 	}
 
-	// 创建 Agent
-	baseAgent := agent.NewBaseAgent(llmClient, toolRegistry, agentConfig)
+	// 创建带 MCP 功能的 Agent
+	baseAgent := agent.NewBaseAgentWithMCP(llmClient, toolRegistry, agentConfig, cfg)
 
 	// 后台处理来自 MCP 的事件，触发 Agent 执行
 	go func() {

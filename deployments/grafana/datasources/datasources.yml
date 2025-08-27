@@ -1,0 +1,68 @@
+# OpenManus-Go Grafana Datasources Configuration
+
+apiVersion: 1
+
+# List of datasources to insert/update depending on what's available in the database
+datasources:
+  # Prometheus datasource
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      prometheusType: Prometheus
+      prometheusVersion: 2.40.0
+      cacheLevel: 'High'
+      disableMetricsLookup: false
+      customQueryParameters: ''
+      timeInterval: 15s
+    secureJsonData: {}
+
+  # MySQL datasource
+  - name: MySQL
+    type: mysql
+    access: proxy
+    url: mysql:3306
+    database: openmanus
+    user: openmanus
+    editable: true
+    jsonData:
+      maxOpenConns: 10
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+      timezone: 'UTC'
+      timeInterval: 30s
+    secureJsonData:
+      password: password
+
+  # Redis datasource (if redis-datasource plugin is installed)
+  - name: Redis
+    type: redis-datasource
+    access: proxy
+    url: redis:6379
+    editable: true
+    jsonData:
+      client: 'standalone'
+      poolSize: 5
+      timeout: 10
+      pingInterval: 0
+      pipelineWindow: 0
+    secureJsonData: {}
+
+  # Elasticsearch datasource (if available)
+  # - name: Elasticsearch
+  #   type: elasticsearch
+  #   access: proxy
+  #   url: http://elasticsearch:9200
+  #   database: '[openmanus-logs-]YYYY.MM.DD'
+  #   editable: true
+  #   jsonData:
+  #     interval: Daily
+  #     timeField: '@timestamp'
+  #     esVersion: 8
+  #     maxConcurrentShardRequests: 5
+  #     logMessageField: 'message'
+  #     logLevelField: 'level'
