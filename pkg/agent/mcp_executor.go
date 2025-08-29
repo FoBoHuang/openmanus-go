@@ -78,8 +78,7 @@ func (e *MCPExecutor) ExecuteTool(ctx context.Context, action state.Action) (*st
 		toolName = prefixedToolName
 	}
 
-	logger.Get().Sugar().Infow("Executing MCP tool",
-		"server", serverName, "tool", toolName, "args", toolArgs)
+	logger.Infof("🔌 [MCP] Calling %s on server %s", toolName, serverName)
 
 	// 执行工具调用
 	result, err := e.callMCPTool(ctx, serverName, serverConfig, toolName, toolArgs)
@@ -96,13 +95,11 @@ func (e *MCPExecutor) ExecuteTool(ctx context.Context, action state.Action) (*st
 
 	if err != nil {
 		observation.ErrMsg = fmt.Sprintf("MCP tool execution failed: %v", err)
-		logger.Get().Sugar().Warnw("MCP tool execution failed",
-			"server", serverName, "tool", toolName, "error", err, "latency_ms", observation.Latency)
+		logger.Warnf("❌ [MCP] %s failed: %v (%.0fms)", toolName, err, float64(observation.Latency))
 	} else {
 		// 直接返回原始结果，让 LLM 处理和决策
 		observation.Output = result
-		logger.Get().Sugar().Infow("MCP tool executed successfully",
-			"server", serverName, "tool", toolName, "latency_ms", observation.Latency)
+		logger.Infof("✅ [MCP] %s completed (%.0fms)", toolName, float64(observation.Latency))
 	}
 
 	return observation, nil

@@ -13,9 +13,11 @@ import (
 // actionable analysis goals and forwards them to the provided channel.
 func BuildMCPMessageHandler(mcpEvents chan<- string) func(*mcp.Message) {
 	return func(msg *mcp.Message) {
-		// Log raw message for debugging and schema discovery
-		if b, err := json.Marshal(msg); err == nil {
-			logger.Infof("[MCP] Message: %s", string(b))
+		// Log raw message for debugging (skip ping messages to reduce noise)
+		if msg.Method != "ping" {
+			if b, err := json.Marshal(msg); err == nil {
+				logger.Debugf("[MCP] Message: %s", string(b))
+			}
 		}
 
 		if !msg.IsNotification() {
@@ -66,9 +68,11 @@ func BuildServerAwareMCPHandlerFactory(mcpEvents chan<- string) func(serverName 
 		switch serverName {
 		case "mcp-stock-helper":
 			return transport.MessageHandler(func(msg *mcp.Message) {
-				// Reuse the default behavior for now; customize if needed by method
-				if b, err := json.Marshal(msg); err == nil {
-					logger.Infof("[MCP %s] Message: %s", serverName, string(b))
+				// Log non-ping messages only to reduce noise
+				if msg.Method != "ping" {
+					if b, err := json.Marshal(msg); err == nil {
+						logger.Debugf("[MCP %s] %s", serverName, string(b))
+					}
 				}
 				if !msg.IsNotification() {
 					transport.GlobalDispatcher.Deliver(msg)

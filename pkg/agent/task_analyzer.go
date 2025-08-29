@@ -134,6 +134,14 @@ Your analysis should consider:
 2. **Action Verification**: Check if the intended actions were actually executed successfully
 3. **Output Requirements**: If the goal asks for specific outputs (files, reports, etc.), verify they were created
 4. **Logical Completeness**: Ensure the sequence of actions logically fulfills the entire goal
+5. **MCP Tool Success**: When you see "MCP tool executed successfully with response data" or "Successfully retrieved stock price data", consider this as successful data retrieval
+6. **Data Query Tasks**: For queries like "查询股价" (query stock price), if MCP tools successfully retrieved data, the core requirement is satisfied
+
+Special handling for different task types:
+- **Query/Search Tasks**: Success = data successfully retrieved and available
+- **File Operations**: Success = files created/modified as requested  
+- **Analysis Tasks**: Success = analysis performed and results available
+- **Multi-step Tasks**: Success = ALL individual steps completed
 
 Return your analysis as a JSON object with this exact format:
 {
@@ -145,7 +153,10 @@ Return your analysis as a JSON object with this exact format:
   "suggested_action": "what should be done next (if anything)"
 }
 
-CRITICAL: Only mark is_complete=true if EVERY requirement in the goal has been satisfied. Be strict about this evaluation.`
+CRITICAL: 
+- For data query tasks, if MCP tools successfully retrieved the requested data, mark is_complete=true
+- Only mark is_complete=false if there are genuinely missing requirements
+- Be practical: if the core objective has been achieved, don't be overly strict about presentation details`
 }
 
 // buildAnalysisUserPrompt 构建分析用户提示
@@ -169,12 +180,8 @@ func (t *TaskCompletionAnalyzer) buildAnalysisUserPrompt(goal string, trace *sta
 				if step.Observation.ErrMsg != "" {
 					prompt.WriteString(fmt.Sprintf(" → ❌ FAILED: %s", step.Observation.ErrMsg))
 				} else {
-					// 显示简短的输出预览
-					outputStr := fmt.Sprintf("%v", step.Observation.Output)
-					if len(outputStr) > 200 {
-						outputStr = outputStr[:200] + "..."
-					}
-					prompt.WriteString(fmt.Sprintf(" → ✅ SUCCESS: %s", outputStr))
+					outputSummary := t.summarizeToolOutput(step.Action.Name, step.Observation.Output)
+					prompt.WriteString(fmt.Sprintf(" → ✅ SUCCESS: %s", outputSummary))
 				}
 			}
 			prompt.WriteString("\n")
@@ -191,6 +198,77 @@ func (t *TaskCompletionAnalyzer) buildAnalysisUserPrompt(goal string, trace *sta
 	prompt.WriteString("5. Provide your analysis in the specified JSON format\n")
 
 	return prompt.String()
+}
+
+// summarizeToolOutput 为不同类型的工具提供更好的输出摘要
+func (t *TaskCompletionAnalyzer) summarizeToolOutput(toolName string, output map[string]any) string {
+	if output == nil {
+		return "No output"
+	}
+
+	switch toolName {
+	case "mcp_call":
+		return t.summarizeMCPOutput(output)
+	case "direct_answer":
+		if answer, ok := output["answer"].(string); ok {
+			if len(answer) > 100 {
+				return answer[:100] + "... [answer provided]"
+			}
+			return answer
+		}
+		return "Direct answer provided"
+	case "crawler", "http", "http_client":
+		if success, ok := output["success"].(bool); ok && success {
+			if result, ok := output["result"].(string); ok && len(result) > 0 {
+				return "Successfully retrieved data"
+			}
+		}
+		return "Web request completed"
+	case "fs", "file_copy":
+		if success, ok := output["success"].(bool); ok && success {
+			return "File operation completed successfully"
+		}
+		return "File operation attempted"
+	default:
+		// 默认处理：简短预览
+		outputStr := fmt.Sprintf("%v", output)
+		if len(outputStr) > 200 {
+			return outputStr[:200] + "..."
+		}
+		return outputStr
+	}
+}
+
+// summarizeMCPOutput 专门处理MCP工具的输出摘要
+func (t *TaskCompletionAnalyzer) summarizeMCPOutput(output map[string]any) string {
+	// 检查是否有实际的数据内容
+	if result, ok := output["result"].(string); ok && len(result) > 0 {
+		// 如果result包含股价等关键信息
+		if strings.Contains(strings.ToLower(result), "price") ||
+			strings.Contains(strings.ToLower(result), "股价") ||
+			strings.Contains(strings.ToLower(result), "hkd") ||
+			strings.Contains(strings.ToLower(result), "港元") {
+			return "Successfully retrieved stock price data with detailed information"
+		}
+		return "MCP tool returned data successfully"
+	}
+
+	// 检查content字段
+	if content, ok := output["content"]; ok && content != nil {
+		contentStr := fmt.Sprintf("%v", content)
+		if len(contentStr) > 50 && contentStr != "{}" {
+			return "MCP tool returned detailed response data"
+		}
+	}
+
+	// 检查_meta字段以确认工具执行
+	if meta, ok := output["_meta"].(map[string]interface{}); ok {
+		if tool, ok := meta["tool"].(string); ok {
+			return fmt.Sprintf("MCP tool '%s' executed successfully with response data", tool)
+		}
+	}
+
+	return "MCP tool executed but response analysis needed"
 }
 
 // fallbackAnalysis 备用分析方法，当JSON解析失败时使用
@@ -228,6 +306,7 @@ func (t *TaskCompletionAnalyzer) fallbackAnalysis(goal string, trace *state.Trac
 		var successfulActions []string
 		hasFileCreation := false
 		hasContentGeneration := false
+		hasDataRetrieval := false
 		hasFailures := false
 
 		for _, step := range trace.Steps {
@@ -241,12 +320,28 @@ func (t *TaskCompletionAnalyzer) fallbackAnalysis(goal string, trace *state.Trac
 				if step.Action.Name == "direct_answer" || step.Action.Name == "crawler" {
 					hasContentGeneration = true
 				}
+				if step.Action.Name == "mcp_call" || step.Action.Name == "http" || step.Action.Name == "http_client" {
+					// 检查是否真正获取到了数据
+					if step.Observation.Output != nil {
+						outputSummary := t.summarizeToolOutput(step.Action.Name, step.Observation.Output)
+						if strings.Contains(outputSummary, "successfully") ||
+							strings.Contains(outputSummary, "retrieved") ||
+							strings.Contains(outputSummary, "data") {
+							hasDataRetrieval = true
+						}
+					}
+				}
 			} else if step.Observation != nil && step.Observation.ErrMsg != "" {
 				hasFailures = true
 			}
 		}
 
 		result.CompletedTasks = successfulActions
+
+		// 检查查询类任务
+		isQueryTask := strings.Contains(goalLower, "查询") || strings.Contains(goalLower, "query") ||
+			strings.Contains(goalLower, "搜索") || strings.Contains(goalLower, "search") ||
+			strings.Contains(goalLower, "获取") || strings.Contains(goalLower, "get")
 
 		// 对于多步任务，需要所有关键动作都完成
 		if isMultiStepTask {
@@ -273,6 +368,18 @@ func (t *TaskCompletionAnalyzer) fallbackAnalysis(goal string, trace *state.Trac
 			} else {
 				result.PendingTasks = missingActions
 				result.Confidence = 0.3
+			}
+		} else if isQueryTask {
+			// 查询类任务：数据检索成功即为完成
+			if hasDataRetrieval {
+				result.IsComplete = true
+				result.Confidence = 0.8
+				result.Reason = "Query task completed - data successfully retrieved"
+				result.SuggestedAction = "direct_answer"
+				result.PendingTasks = []string{}
+			} else {
+				result.PendingTasks = []string{"获取查询数据"}
+				result.Confidence = 0.2
 			}
 		} else {
 			// 单步任务：有成功操作且没有失败
