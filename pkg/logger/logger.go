@@ -63,23 +63,7 @@ func parseLevel(level string) zapcore.Level {
 
 // buildCore 根据配置构建 zap core（支持 console/file/both）
 func buildCore(cfg Config) zapcore.Core {
-	encoderCfg := zapcore.EncoderConfig{
-		TimeKey:        "ts",
-		LevelKey:       "level",
-		NameKey:        "logger",
-		CallerKey:      "caller",
-		MessageKey:     "msg",
-		StacktraceKey:  "stacktrace",
-		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		EncodeTime:     zapcore.ISO8601TimeEncoder,
-		EncodeDuration: zapcore.SecondsDurationEncoder,
-		EncodeCaller:   zapcore.ShortCallerEncoder,
-	}
-
 	level := parseLevel(cfg.Level)
-	jsonEncoder := zapcore.NewJSONEncoder(encoderCfg)
-
 	var cores []zapcore.Core
 
 	out := strings.ToLower(cfg.Output)
@@ -87,11 +71,42 @@ func buildCore(cfg Config) zapcore.Core {
 		out = "console"
 	}
 
+	// 控制台输出使用友好格式
 	if out == "console" || out == "both" {
-		cores = append(cores, zapcore.NewCore(jsonEncoder, zapcore.AddSync(os.Stdout), level))
+		consoleEncoderCfg := zapcore.EncoderConfig{
+			TimeKey:        "ts",
+			LevelKey:       "level",
+			NameKey:        "logger",
+			CallerKey:      "caller",
+			MessageKey:     "msg",
+			StacktraceKey:  "stacktrace",
+			LineEnding:     zapcore.DefaultLineEnding,
+			EncodeLevel:    zapcore.CapitalColorLevelEncoder,        // 彩色级别
+			EncodeTime:     zapcore.TimeEncoderOfLayout("15:04:05"), // 简化时间格式
+			EncodeDuration: zapcore.SecondsDurationEncoder,
+			EncodeCaller:   zapcore.ShortCallerEncoder,
+		}
+		consoleEncoder := zapcore.NewConsoleEncoder(consoleEncoderCfg)
+		cores = append(cores, zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stdout), level))
 	}
 
+	// 文件输出使用JSON格式
 	if out == "file" || out == "both" {
+		fileEncoderCfg := zapcore.EncoderConfig{
+			TimeKey:        "ts",
+			LevelKey:       "level",
+			NameKey:        "logger",
+			CallerKey:      "caller",
+			MessageKey:     "msg",
+			StacktraceKey:  "stacktrace",
+			LineEnding:     zapcore.DefaultLineEnding,
+			EncodeLevel:    zapcore.LowercaseLevelEncoder,
+			EncodeTime:     zapcore.ISO8601TimeEncoder,
+			EncodeDuration: zapcore.SecondsDurationEncoder,
+			EncodeCaller:   zapcore.ShortCallerEncoder,
+		}
+		fileEncoder := zapcore.NewJSONEncoder(fileEncoderCfg)
+
 		path := cfg.FilePath
 		if path == "" {
 			path = "./log/openmanus.log"
@@ -99,15 +114,29 @@ func buildCore(cfg Config) zapcore.Core {
 		_ = os.MkdirAll(filepath.Dir(path), 0755)
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err == nil {
-			cores = append(cores, zapcore.NewCore(jsonEncoder, zapcore.AddSync(f), level))
+			cores = append(cores, zapcore.NewCore(fileEncoder, zapcore.AddSync(f), level))
 		} else {
 			// 回退到控制台
-			cores = append(cores, zapcore.NewCore(jsonEncoder, zapcore.AddSync(os.Stdout), level))
+			cores = append(cores, zapcore.NewCore(zapcore.NewConsoleEncoder(zapcore.EncoderConfig{
+				TimeKey:     "ts",
+				LevelKey:    "level",
+				MessageKey:  "msg",
+				EncodeLevel: zapcore.CapitalColorLevelEncoder,
+				EncodeTime:  zapcore.TimeEncoderOfLayout("15:04:05"),
+			}), zapcore.AddSync(os.Stdout), level))
 		}
 	}
 
 	if len(cores) == 0 {
-		cores = append(cores, zapcore.NewCore(jsonEncoder, zapcore.AddSync(os.Stdout), level))
+		cores = append(cores, zapcore.NewCore(
+			zapcore.NewConsoleEncoder(zapcore.EncoderConfig{
+				TimeKey:     "ts",
+				LevelKey:    "level",
+				MessageKey:  "msg",
+				EncodeLevel: zapcore.CapitalColorLevelEncoder,
+				EncodeTime:  zapcore.TimeEncoderOfLayout("15:04:05"),
+			}),
+			zapcore.AddSync(os.Stdout), level))
 	}
 
 	return zapcore.NewTee(cores...)

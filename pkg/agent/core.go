@@ -367,7 +367,8 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 		UpdatedAt: time.Now(),
 	}
 
-	logger.Infow("agent.loop.start", "goal", goal, "budget_max_steps", a.config.MaxSteps, "budget_max_tokens", a.config.MaxTokens, "budget_max_duration", a.config.MaxDuration.String())
+	logger.Infof("🚀 [AGENT] Starting execution: %s", goal)
+	logger.Infof("📊 [BUDGET] Max steps: %d | Max tokens: %d | Max duration: %s", a.config.MaxSteps, a.config.MaxTokens, a.config.MaxDuration.String())
 
 	var finalResult string
 
@@ -381,14 +382,17 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 		}
 
 		// 规划下一步
-		logger.Debugw("agent.plan.start", "used_steps", len(trace.Steps))
+		logger.Infof("\n🤔 [STEP %d] Planning next action...", len(trace.Steps)+1)
 		action, err := a.Plan(ctx, goal, trace)
 		if err != nil {
 			trace.Status = state.TraceStatusFailed
-			logger.Errorw("agent.plan.error", "error", err)
+			logger.Errorf("❌ [PLAN] Planning failed: %v", err)
 			return "", fmt.Errorf("planning failed: %w", err)
 		}
-		logger.Infow("agent.plan.ok", "action", action.Name, "args", action.Args)
+		logger.Infof("✅ [PLAN] Selected action: %s", action.Name)
+		if len(fmt.Sprintf("%v", action.Args)) < 200 {
+			logger.Debugf("🔧 [ARGS] %v", action.Args)
+		}
 
 		// 添加步骤到轨迹
 		_ = trace.AddStep(action)
@@ -411,17 +415,13 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 					// 任务确实完成了
 					finalResult = potentialResult
 					trace.Status = state.TraceStatusCompleted
-					logger.Infow("agent.answer.verified",
-						"result_preview", previewString(finalResult, 160),
-						"completed_tasks", len(completionResult.CompletedTasks),
-						"confidence", completionResult.Confidence)
+					logger.Infof("✅ [ANSWER] Task verified as complete (confidence: %.1f)", completionResult.Confidence)
+					logger.Infof("📋 [SUMMARY] Completed %d tasks", len(completionResult.CompletedTasks))
 					break
 				} else {
 					// 任务还未完成，继续执行
-					logger.Infow("agent.answer.incomplete",
-						"pending_tasks", len(completionResult.PendingTasks),
-						"reason", completionResult.Reason,
-						"suggested_action", completionResult.SuggestedAction)
+					logger.Infof("⏳ [CONTINUE] Task incomplete - %d pending tasks", len(completionResult.PendingTasks))
+					logger.Debugf("💡 [REASON] %s", completionResult.Reason)
 
 					// 不执行 direct_answer，而是继续循环让 Agent 完成剩余任务
 					// 移除最后一个 direct_answer 步骤，因为任务未完成
@@ -434,7 +434,7 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 				// 如果没有任务分析器，使用原来的逻辑
 				finalResult = potentialResult
 				trace.Status = state.TraceStatusCompleted
-				logger.Infow("agent.answer", "result_preview", previewString(finalResult, 160))
+				logger.Infof("✅ [ANSWER] Task completed")
 				break
 			}
 		}
@@ -443,12 +443,12 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 		if action.Name == "stop" {
 			finalResult = getStringFromArgs(action.Args, "reason")
 			trace.Status = state.TraceStatusCompleted
-			logger.Infow("agent.stop", "reason", finalResult)
+			logger.Infof("🛑 [STOP] %s", finalResult)
 			break
 		}
 
 		// 执行工具调用
-		logger.Infow("agent.act.start", "tool", action.Name, "args", action.Args)
+		logger.Infof("⚡ [EXEC] Executing %s...", action.Name)
 		observation, err := a.Act(ctx, action)
 		if err != nil {
 			// 执行失败，但继续运行让 Agent 处理错误
@@ -459,9 +459,12 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 		}
 		if observation != nil {
 			if observation.ErrMsg != "" {
-				logger.Warnw("agent.act.error", "tool", action.Name, "error", observation.ErrMsg, "latency_ms", observation.Latency)
+				logger.Warnf("⚠️  [RESULT] %s failed: %s (%.0fms)", action.Name, observation.ErrMsg, float64(observation.Latency))
 			} else {
-				logger.Infow("agent.act.ok", "tool", action.Name, "latency_ms", observation.Latency, "output_preview", previewAny(observation.Output))
+				logger.Infof("✅ [RESULT] %s completed successfully (%.0fms)", action.Name, float64(observation.Latency))
+				if preview := previewAny(observation.Output); preview != nil {
+					logger.Debugf("📄 [OUTPUT] %v", preview)
+				}
 			}
 		}
 
@@ -470,18 +473,22 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 
 		// 定期进行反思 (避免除零错误)
 		if a.config.ReflectionSteps > 0 && len(trace.Steps)%a.config.ReflectionSteps == 0 {
-			logger.Debugw("agent.reflect.start", "steps", len(trace.Steps))
+			logger.Infof("🤖 [REFLECT] Analyzing progress after %d steps...", len(trace.Steps))
 			reflection, err := a.Reflect(ctx, trace)
 			if err == nil && reflection.ShouldStop {
 				finalResult = reflection.Reason
 				trace.Status = state.TraceStatusCompleted
-				logger.Infow("agent.reflect.stop", "reason", reflection.Reason, "confidence", reflection.Confidence)
+				logger.Infof("🎯 [REFLECT] Task completed: %s (confidence: %.1f)", reflection.Reason, reflection.Confidence)
 				break
 			}
 			if err != nil {
-				logger.Warnw("agent.reflect.error", "error", err)
+				logger.Warnf("⚠️  [REFLECT] Reflection failed: %v", err)
 			} else {
-				logger.Debugw("agent.reflect.ok", "revise_plan", reflection.RevisePlan, "hint", reflection.NextActionHint)
+				if reflection.RevisePlan {
+					logger.Debugf("💭 [REFLECT] Continue with plan revision")
+				} else {
+					logger.Debugf("💭 [REFLECT] Continue without plan revision")
+				}
 			}
 		}
 	}
@@ -491,7 +498,7 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 		finalResult = a.generateSummary(trace)
 	}
 
-	logger.Infow("agent.loop.done", "goal", goal, "status", trace.Status, "steps", len(trace.Steps))
+	logger.Infof("🏁 [DONE] Execution completed: %s | Steps: %d | Status: %s", goal, len(trace.Steps), trace.Status)
 
 	return finalResult, nil
 }

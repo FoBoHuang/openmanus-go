@@ -46,10 +46,10 @@ func (p *Planner) Plan(ctx context.Context, goal string, trace *state.Trace) (st
 	if p.mcpSelector != nil && p.shouldUseMCPTools(goal, trace) {
 		action, err := p.tryMCPToolSelection(ctx, goal, trace)
 		if err == nil {
-			logger.Get().Sugar().Infow("Selected MCP tool via intelligent selection", "action", action.Name)
+			logger.Infof("🤖 [MCP] Auto-selected tool via intelligent selection")
 			return action, nil
 		}
-		logger.Get().Sugar().Debugw("MCP tool selection failed, falling back to standard planning", "error", err)
+		logger.Debugf("🔄 [MCP] Selection failed, using standard planning: %v", err)
 	}
 
 	// 回退到标准规划流程
@@ -84,7 +84,7 @@ func (p *Planner) shouldUseMCPTools(goal string, trace *state.Trace) bool {
 			step := trace.Steps[i]
 			// 如果有成功的 MCP 调用，让标准规划器处理结果
 			if step.Action.Name == "mcp_call" && step.Observation != nil && step.Observation.ErrMsg == "" {
-				logger.Get().Sugar().Debugw("Found recent successful MCP call, using standard planning to analyze results")
+				logger.Debugf("📊 [PLAN] Analyzing recent MCP results")
 				return false
 			}
 		}
@@ -103,7 +103,7 @@ func (p *Planner) shouldUseMCPTools(goal string, trace *state.Trace) bool {
 
 	for _, keyword := range externalKeywords {
 		if strings.Contains(goalLower, keyword) {
-			logger.Get().Sugar().Debugw("MCP tools triggered by keyword", "keyword", keyword, "goal", goal)
+			logger.Debugf("🔍 [MCP] Triggered by keyword: %s", keyword)
 			return true
 		}
 	}
@@ -114,13 +114,13 @@ func (p *Planner) shouldUseMCPTools(goal string, trace *state.Trace) bool {
 			step := trace.Steps[i]
 			if step.Observation != nil && step.Observation.ErrMsg != "" {
 				// 如果最近的内置工具失败了，尝试 MCP 工具
-				logger.Get().Sugar().Debugw("MCP tools triggered by previous failure")
+				logger.Debugf("🔄 [MCP] Triggered by previous tool failure")
 				return true
 			}
 		}
 	}
 
-	logger.Get().Sugar().Debugw("MCP tools not triggered", "goal", goal)
+	logger.Debugf("🚫 [MCP] Not triggered for: %s", goal)
 	return false
 }
 

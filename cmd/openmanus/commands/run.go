@@ -154,7 +154,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 }
 
 func runSingleGoal(ctx context.Context, agent agent.Agent, goal string, cmd *cobra.Command) error {
-	logger.Infof("🎯 Goal: %s", goal)
+	logger.Infof("\n🎯 [GOAL] %s\n", goal)
 
 	// 执行任务
 	result, err := agent.Loop(ctx, goal)
@@ -163,7 +163,7 @@ func runSingleGoal(ctx context.Context, agent agent.Agent, goal string, cmd *cob
 	}
 
 	// 输出结果
-	logger.Infof("✅ Result: \n%s", result)
+	logger.Infof("\n🏆 [RESULT] Task completed successfully!\n%s\n", result)
 
 	// 保存轨迹
 	saveTrace, _ := cmd.Flags().GetBool("save-trace")
@@ -178,7 +178,7 @@ func runSingleGoal(ctx context.Context, agent agent.Agent, goal string, cmd *cob
 		if err := os.WriteFile(outputPath, []byte(result), 0644); err != nil {
 			return fmt.Errorf("failed to write output file: %w", err)
 		}
-		logger.Infof("💾 Output saved to %s", outputPath)
+		logger.Infof("💾 [SAVE] Output saved to %s", outputPath)
 	}
 
 	return nil
