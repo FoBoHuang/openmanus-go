@@ -389,3 +389,42 @@ func (e *MCPExecutor) calculateToolRecommendationScore(tool *MCPToolInfo) float6
 
 	return baseScore
 }
+
+// ExecuteMCPTool 实现 tool.MCPExecutor 接口
+func (e *MCPExecutor) ExecuteMCPTool(ctx context.Context, serverName, toolName string, args map[string]any) (map[string]any, error) {
+	// 获取服务器配置
+	serverConfig, exists := e.config.MCP.Servers[serverName]
+	if !exists {
+		return nil, fmt.Errorf("MCP server '%s' not found in configuration", serverName)
+	}
+
+	// 验证工具存在
+	_, toolExists := e.discoveryService.GetTool(toolName)
+	if !toolExists {
+		// 尝试使用服务器前缀查找
+		prefixedToolName := fmt.Sprintf("%s.%s", serverName, toolName)
+		if _, toolExists = e.discoveryService.GetTool(prefixedToolName); !toolExists {
+			return nil, fmt.Errorf("tool '%s' not found on server '%s'", toolName, serverName)
+		}
+		toolName = prefixedToolName
+	}
+
+	// 转换参数类型
+	toolArgs := make(map[string]interface{})
+	for k, v := range args {
+		toolArgs[k] = v
+	}
+
+	// 执行工具调用
+	result, err := e.callMCPTool(ctx, serverName, serverConfig, toolName, toolArgs)
+	if err != nil {
+		// 更新执行统计
+		e.updateExecutionStats(serverName, toolName, false, 0, err)
+		return nil, err
+	}
+
+	// 更新执行统计
+	e.updateExecutionStats(serverName, toolName, true, 0, nil)
+
+	return result, nil
+}

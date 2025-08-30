@@ -100,7 +100,7 @@ func NewBaseAgent(llmClient llm.Client, toolRegistry *tool.Registry, config *Con
 	}
 }
 
-// NewBaseAgentWithMCP 创建带 MCP 功能的基础 Agent
+// NewBaseAgentWithMCP 创建带 MCP 功能的基础 Agent（采用统一工具集合策略）
 func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agentConfig *Config, appConfig *config.Config) *BaseAgent {
 	if agentConfig == nil {
 		agentConfig = DefaultConfig()
@@ -111,48 +111,56 @@ func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agen
 	}
 
 	// 创建基础组件
-	toolExecutor := tool.NewExecutor(toolRegistry, 30*time.Second)
 	memory := NewMemory()
 	reflector := NewReflector(llmClient)
 
-	// 尝试创建 MCP 组件
-	var planner *Planner
+	// 如果有 MCP 配置，将 MCP 工具集成到统一注册表中
+	var mcpExecutor *MCPExecutor
 	if appConfig != nil && len(appConfig.MCP.Servers) > 0 {
 		// 创建 MCP 发现服务
 		mcpDiscovery := NewMCPDiscoveryService(appConfig)
 
-		// 创建 MCP 选择器
-		mcpSelector := NewMCPToolSelector(mcpDiscovery, llmClient)
-
 		// 创建 MCP 执行器
-		mcpExecutor := NewMCPExecutor(appConfig, mcpDiscovery)
+		mcpExecutor = NewMCPExecutor(appConfig, mcpDiscovery)
 
-		// 创建带 MCP 功能的规划器
-		planner = NewPlannerWithMCP(llmClient, toolRegistry, mcpDiscovery, mcpSelector, mcpExecutor)
-
-		// 启动 MCP 发现服务
+		// 启动 MCP 发现服务并注册工具到统一注册表
 		go func() {
 			ctx := context.Background()
 			if err := mcpDiscovery.Start(ctx); err != nil {
 				logger.Get().Sugar().Warnw("Failed to start MCP discovery service", "error", err)
+				return
+			}
+
+			// 等待一段时间让MCP工具发现完成
+			time.Sleep(2 * time.Second)
+
+			// 将发现的MCP工具注册到统一注册表
+			allTools := mcpDiscovery.GetAllTools()
+			mcpToolInfos := make([]tool.ToolInfo, 0, len(allTools))
+			for _, mcpTool := range allTools {
+				mcpToolInfos = append(mcpToolInfos, tool.ToolInfo{
+					Name:         mcpTool.Name,
+					Description:  mcpTool.Description,
+					InputSchema:  mcpTool.InputSchema,
+					OutputSchema: make(map[string]any), // MCP工具通常没有预定义的输出schema
+					Type:         tool.ToolTypeMCP,
+					ServerName:   mcpTool.ServerName,
+				})
+			}
+
+			if len(mcpToolInfos) > 0 {
+				if err := toolRegistry.RegisterMCPTools(mcpToolInfos, mcpExecutor); err != nil {
+					logger.Get().Sugar().Warnw("Failed to register MCP tools", "error", err)
+				} else {
+					logger.Get().Sugar().Infow("Successfully registered MCP tools to unified registry", "count", len(mcpToolInfos))
+				}
 			}
 		}()
-
-		return &BaseAgent{
-			llmClient:    llmClient,
-			toolExecutor: toolExecutor,
-			planner:      planner,
-			memory:       memory,
-			reflector:    reflector,
-			config:       agentConfig,
-			mcpExecutor:  mcpExecutor,
-			taskAnalyzer: NewTaskCompletionAnalyzer(llmClient),
-			taskManager:  NewTaskManager(llmClient),
-		}
 	}
 
-	// 如果没有 MCP 配置，使用标准规划器
-	planner = NewPlanner(llmClient, toolRegistry)
+	// 创建统一的工具执行器和规划器
+	toolExecutor := tool.NewExecutor(toolRegistry, 30*time.Second)
+	planner := NewPlanner(llmClient, toolRegistry) // 使用统一的规划器，不需要特殊的MCP逻辑
 
 	return &BaseAgent{
 		llmClient:    llmClient,
@@ -161,7 +169,7 @@ func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agen
 		memory:       memory,
 		reflector:    reflector,
 		config:       agentConfig,
-		mcpExecutor:  nil,
+		mcpExecutor:  mcpExecutor, // 保留引用用于清理
 		taskAnalyzer: NewTaskCompletionAnalyzer(llmClient),
 		taskManager:  NewTaskManager(llmClient),
 	}
@@ -172,14 +180,10 @@ func (a *BaseAgent) Plan(ctx context.Context, goal string, trace *state.Trace) (
 	return a.planner.Plan(ctx, goal, trace)
 }
 
-// Act 执行动作
+// Act 执行动作（统一执行接口）
 func (a *BaseAgent) Act(ctx context.Context, action state.Action) (*state.Observation, error) {
-	// 检查是否为 MCP 工具调用
-	if action.Name == "mcp_call" && a.mcpExecutor != nil {
-		return a.mcpExecutor.ExecuteTool(ctx, action)
-	}
-
-	// 使用标准工具执行器
+	// 统一通过工具执行器执行，不区分工具类型
+	// 工具执行器会根据工具的实现自动路由到正确的执行方法
 	return a.toolExecutor.Execute(ctx, action)
 }
 
