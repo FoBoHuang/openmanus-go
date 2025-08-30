@@ -37,7 +37,20 @@ func (e *Executor) Execute(ctx context.Context, action state.Action) (*state.Obs
 	defer cancel()
 
 	start := time.Now()
-	logger.Infow("tool.exec.start", "tool", action.Name, "args", action.Args)
+
+	// 获取工具信息以显示类型
+	toolInfo := e.getToolInfo(action.Name)
+	toolTypeSymbol := "🔧" // 默认内置工具
+	toolTypeText := "Built-in"
+	if toolInfo != nil && toolInfo.Type == ToolTypeMCP {
+		toolTypeSymbol = "🌐"
+		toolTypeText = "MCP"
+	}
+
+	logger.Infof("🔧 [TOOL] Executing %s %s (%s tool)", toolTypeSymbol, action.Name, toolTypeText)
+	if toolInfo != nil && toolInfo.ServerName != "" {
+		logger.Infof("📡 [SERVER] Calling MCP server: %s", toolInfo.ServerName)
+	}
 
 	// 调用工具
 	result, err := e.registry.Invoke(execCtx, action.Name, action.Args)
@@ -156,6 +169,17 @@ func (e *Executor) GetAvailableTools() []ToolInfo {
 // SetTimeout 设置执行超时时间
 func (e *Executor) SetTimeout(timeout time.Duration) {
 	e.timeout = timeout
+}
+
+// getToolInfo 获取工具信息
+func (e *Executor) getToolInfo(toolName string) *ToolInfo {
+	manifest := e.registry.GetToolsManifest()
+	for _, toolInfo := range manifest {
+		if toolInfo.Name == toolName {
+			return &toolInfo
+		}
+	}
+	return nil
 }
 
 func previewResult(m map[string]any) any {

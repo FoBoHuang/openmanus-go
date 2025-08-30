@@ -373,6 +373,7 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 
 	logger.Infof("🚀 [AGENT] Starting execution: %s", goal)
 	logger.Infof("📊 [BUDGET] Max steps: %d | Max tokens: %d | Max duration: %s", a.config.MaxSteps, a.config.MaxTokens, a.config.MaxDuration.String())
+	logger.Infof("═══════════════════════════════════════════════════════════════")
 
 	var finalResult string
 
@@ -386,16 +387,18 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 		}
 
 		// 规划下一步
-		logger.Infof("\n🤔 [STEP %d] Planning next action...", len(trace.Steps)+1)
+		stepNum := len(trace.Steps) + 1
+		logger.Infof("")
+		logger.Infof("🤔 [STEP %d/%d] Planning next action...", stepNum, a.config.MaxSteps)
+		logger.Infof("⏱️  [PROGRESS] %.1f%% complete | Elapsed: %v",
+			float64(stepNum-1)/float64(a.config.MaxSteps)*100,
+			time.Since(trace.Budget.StartTime).Round(time.Second))
+
 		action, err := a.Plan(ctx, goal, trace)
 		if err != nil {
 			trace.Status = state.TraceStatusFailed
 			logger.Errorf("❌ [PLAN] Planning failed: %v", err)
 			return "", fmt.Errorf("planning failed: %w", err)
-		}
-		logger.Infof("✅ [PLAN] Selected action: %s", action.Name)
-		if len(fmt.Sprintf("%v", action.Args)) < 200 {
-			logger.Debugf("🔧 [ARGS] %v", action.Args)
 		}
 
 		// 添加步骤到轨迹
@@ -454,6 +457,7 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 		// 执行工具调用
 		logger.Infof("⚡ [EXEC] Executing %s...", action.Name)
 		observation, err := a.Act(ctx, action)
+
 		if err != nil {
 			// 执行失败，但继续运行让 Agent 处理错误
 			observation = &state.Observation{
@@ -467,7 +471,12 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 			} else {
 				logger.Infof("✅ [RESULT] %s completed successfully (%.0fms)", action.Name, float64(observation.Latency))
 				if preview := previewAny(observation.Output); preview != nil {
-					logger.Debugf("📄 [OUTPUT] %v", preview)
+					// 显示输出预览，但限制长度
+					if previewStr := fmt.Sprintf("%v", preview); len(previewStr) > 200 {
+						logger.Infof("📄 [OUTPUT] %s... <%d chars total>", previewStr[:200], len(previewStr))
+					} else {
+						logger.Infof("📄 [OUTPUT] %v", preview)
+					}
 				}
 			}
 		}
@@ -502,7 +511,25 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 		finalResult = a.generateSummary(trace)
 	}
 
-	logger.Infof("🏁 [DONE] Execution completed: %s | Steps: %d | Status: %s", goal, len(trace.Steps), trace.Status)
+	logger.Infof("")
+	logger.Infof("═══════════════════════════════════════════════════════════════")
+	logger.Infof("🏁 [DONE] Execution completed!")
+	logger.Infof("📋 [SUMMARY] Goal: %s", goal)
+	logger.Infof("📊 [STATS] Steps: %d/%d | Status: %s | Duration: %v",
+		len(trace.Steps), a.config.MaxSteps, trace.Status, time.Since(trace.Budget.StartTime).Round(time.Second))
+
+	// 显示执行步骤摘要
+	if len(trace.Steps) > 0 {
+		logger.Infof("🔍 [STEPS] Execution trace:")
+		for i, step := range trace.Steps {
+			status := "✅"
+			if step.Observation != nil && step.Observation.ErrMsg != "" {
+				status = "❌"
+			}
+			logger.Infof("   %d. %s %s", i+1, status, step.Action.Name)
+		}
+	}
+	logger.Infof("═══════════════════════════════════════════════════════════════")
 
 	return finalResult, nil
 }
@@ -550,7 +577,8 @@ func (a *BaseAgent) executeSubTask(ctx context.Context, task *SubTask, trace *st
 	subGoal := fmt.Sprintf("%s: %s", task.Title, task.Description)
 
 	// 限制子任务的步数，避免无限循环
-	maxSubSteps := 3
+	// 根据任务类型设置不同的步数限制
+	maxSubSteps := a.getMaxStepsForTaskType(task.Type)
 	stepCount := 0
 
 	for stepCount < maxSubSteps {
@@ -605,12 +633,34 @@ func (a *BaseAgent) executeSubTask(ctx context.Context, task *SubTask, trace *st
 	return nil, fmt.Errorf("subtask %s exceeded maximum steps (%d)", task.ID, maxSubSteps)
 }
 
+// getMaxStepsForTaskType 根据任务类型获取最大步数限制
+func (a *BaseAgent) getMaxStepsForTaskType(taskType string) int {
+	switch taskType {
+	case "data_collection":
+		return 6 // 数据收集任务可能需要调用多个API
+	case "analysis":
+		return 4 // 分析任务需要处理和分析数据
+	case "content_generation":
+		return 3 // 内容生成相对简单
+	case "file_operation":
+		return 2 // 文件操作通常很简单
+	default:
+		return 3 // 默认步数
+	}
+}
+
 // isSubTaskCompleted 判断子任务是否完成
 func (a *BaseAgent) isSubTaskCompleted(task *SubTask, action state.Action, observation *state.Observation) bool {
 	switch task.Type {
 	case "data_collection":
-		// 数据收集任务：成功的crawler、http调用
-		return action.Name == "crawler" || action.Name == "http" || action.Name == "http_client"
+		// 数据收集任务：成功的任何数据获取工具调用，包括MCP工具
+		return strings.Contains(action.Name, "stock") ||
+			strings.Contains(action.Name, "candlestick") ||
+			strings.Contains(action.Name, "price") ||
+			strings.Contains(action.Name, "rank") ||
+			action.Name == "crawler" ||
+			action.Name == "http" ||
+			action.Name == "http_client"
 
 	case "file_operation":
 		// 文件操作任务：成功的fs、file_copy调用
