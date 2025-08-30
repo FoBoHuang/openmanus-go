@@ -104,12 +104,22 @@ func (r *Registry) GetToolsManifest() []ToolInfo {
 
 	manifest := make([]ToolInfo, 0, len(r.tools))
 	for _, tool := range r.tools {
-		manifest = append(manifest, ToolInfo{
+		toolInfo := ToolInfo{
 			Name:         tool.Name(),
 			Description:  tool.Description(),
 			InputSchema:  tool.InputSchema(),
 			OutputSchema: tool.OutputSchema(),
-		})
+		}
+
+		// 如果工具实现了 ToolWithType 接口，添加类型和服务器信息
+		if toolWithType, ok := tool.(ToolWithType); ok {
+			toolInfo.Type = toolWithType.Type()
+			toolInfo.ServerName = toolWithType.ServerName()
+		} else {
+			toolInfo.Type = ToolTypeBuiltin
+		}
+
+		manifest = append(manifest, toolInfo)
 	}
 
 	return manifest
@@ -146,6 +156,57 @@ func (r *Registry) Invoke(ctx context.Context, name string, args map[string]any)
 	logger.Debugw("tool.invoke.ok", "tool", name, "latency_ms", latency.Milliseconds())
 
 	return result, nil
+}
+
+// RegisterMCPTools 注册MCP工具
+func (r *Registry) RegisterMCPTools(mcpTools []ToolInfo, executor MCPExecutor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, toolInfo := range mcpTools {
+		// 创建MCP工具实例
+		mcpTool := NewMCPTool(
+			toolInfo.Name,
+			toolInfo.Description,
+			toolInfo.ServerName,
+			toolInfo.InputSchema,
+			toolInfo.OutputSchema,
+			executor,
+		)
+
+		// 如果工具已存在，先删除旧的
+		if _, exists := r.tools[toolInfo.Name]; exists {
+			logger.Infow("tool.registry.replace_mcp", "tool", toolInfo.Name, "server", toolInfo.ServerName)
+			delete(r.tools, toolInfo.Name)
+		}
+
+		r.tools[toolInfo.Name] = mcpTool
+		logger.Infow("tool.registry.register_mcp", "tool", toolInfo.Name, "server", toolInfo.ServerName)
+	}
+
+	return nil
+}
+
+// UnregisterMCPTools 取消注册指定服务器的MCP工具
+func (r *Registry) UnregisterMCPTools(serverName string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var removedTools []string
+	for name, tool := range r.tools {
+		if toolWithType, ok := tool.(ToolWithType); ok {
+			if toolWithType.Type() == ToolTypeMCP && toolWithType.ServerName() == serverName {
+				delete(r.tools, name)
+				removedTools = append(removedTools, name)
+			}
+		}
+	}
+
+	if len(removedTools) > 0 {
+		logger.Infow("tool.registry.unregister_mcp_tools", "server", serverName, "tools", removedTools)
+	}
+
+	return nil
 }
 
 // RegisterDefaults 注册默认工具
