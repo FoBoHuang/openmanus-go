@@ -80,6 +80,12 @@ func RegisterBuiltinTools(registry *tool.Registry, cfg *config.Config) error {
 		return fmt.Errorf("failed to register crawler tool: %w", err)
 	}
 
+	// 注册直接回答工具
+	directAnswerTool := NewDirectAnswerTool()
+	if err := registry.Register(directAnswerTool); err != nil {
+		return fmt.Errorf("failed to register direct_answer tool: %w", err)
+	}
+
 	// MCP 工具现在由 Agent 的智能 MCP 系统处理
 	// 不再需要在这里注册旧的 MCP 桥接工具
 
@@ -97,6 +103,7 @@ func GetBuiltinToolsList() []string {
 		"mysql",
 		"browser",
 		"crawler",
+		"direct_answer",
 	}
 }
 
@@ -137,6 +144,8 @@ func CreateToolFromConfig(toolName string, cfg *config.Config) (tool.Tool, error
 			cfg.Tools.HTTP.AllowedDomains,
 			cfg.Tools.HTTP.BlockedDomains,
 		), nil
+	case "direct_answer":
+		return NewDirectAnswerTool(), nil
 	default:
 		return nil, fmt.Errorf("unknown builtin tool: %s", toolName)
 	}
@@ -153,7 +162,7 @@ func ValidateToolConfig(toolName string, cfg *config.Config) error {
 		if cfg.Tools.Database.MySQL.DSN == "" {
 			return fmt.Errorf("mysql.dsn is required")
 		}
-	case "http", "http_client", "fs", "file_copy", "browser", "crawler":
+	case "http", "http_client", "fs", "file_copy", "browser", "crawler", "direct_answer":
 		// 这些工具有默认配置，无需特殊验证
 		return nil
 	default:

@@ -73,22 +73,46 @@ func (p *Planner) standardPlan(ctx context.Context, goal string, trace *state.Tr
 
 	choice := resp.Choices[0]
 
-	// 调试信息
-	logger.Get().Sugar().Debugf("LLM Response - ToolCalls: %d, Content: %q, FinishReason: %s",
-		len(choice.Message.ToolCalls), choice.Message.Content, choice.FinishReason)
-
-	// 处理工具调用
+	// 详细的LLM响应日志
 	if len(choice.Message.ToolCalls) > 0 {
+		logger.Infof("🛠️  [LLM] LLM decided to use a tool")
 		toolCall := choice.Message.ToolCalls[0]
+
+		// 获取工具信息以判断类型
+		toolInfo := p.getToolInfo(toolCall.Function.Name)
+		toolTypeSymbol := "🔧" // 默认内置工具
+		toolTypeText := "Built-in"
+		if toolInfo != nil && toolInfo.Type == tool.ToolTypeMCP {
+			toolTypeSymbol = "🌐"
+			toolTypeText = "MCP"
+		}
+
+		logger.Infof("🎯 [TOOL] Selected: %s %s (%s tool)", toolTypeSymbol, toolCall.Function.Name, toolTypeText)
+		if toolInfo != nil && toolInfo.ServerName != "" {
+			logger.Infof("📡 [SERVER] From MCP server: %s", toolInfo.ServerName)
+		}
+
 		args, err := llm.ParseToolCallArguments(toolCall.Function.Arguments)
 		if err != nil {
 			return state.Action{}, fmt.Errorf("failed to parse tool arguments: %w", err)
+		}
+
+		// 显示工具参数（如果不太长的话）
+		if argsStr := fmt.Sprintf("%v", args); len(argsStr) < 200 {
+			logger.Infof("⚙️  [ARGS] Tool arguments: %v", args)
+		} else {
+			logger.Infof("⚙️  [ARGS] Tool arguments: <long arguments, %d chars>", len(argsStr))
 		}
 
 		return state.Action{
 			Name: toolCall.Function.Name,
 			Args: args,
 		}, nil
+	} else {
+		logger.Infof("💭 [LLM] LLM decided not to use any tools")
+		if choice.Message.Content != "" {
+			logger.Infof("📝 [RESPONSE] LLM response: %s", truncateString(choice.Message.Content, 150))
+		}
 	}
 
 	// 处理直接回答
@@ -350,4 +374,23 @@ func (p *Planner) convertDecisionToAction(decision state.Decision) state.Action 
 			},
 		}
 	}
+}
+
+// getToolInfo 获取工具信息
+func (p *Planner) getToolInfo(toolName string) *tool.ToolInfo {
+	manifest := p.toolRegistry.GetToolsManifest()
+	for _, toolInfo := range manifest {
+		if toolInfo.Name == toolName {
+			return &toolInfo
+		}
+	}
+	return nil
+}
+
+// truncateString 截断字符串
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
