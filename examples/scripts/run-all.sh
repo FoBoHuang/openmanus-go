@@ -1,291 +1,277 @@
 #!/bin/bash
 
-# OpenManus-Go 示例程序运行脚本
-# 用于批量运行所有示例程序
+# OpenManus-Go 示例运行脚本
+# 自动运行所有示例，展示框架的完整功能
 
 set -e
+
+echo "🚀 OpenManus-Go 示例演示"
+echo "========================"
+echo
 
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # 日志函数
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    echo -e "${BLUE}ℹ️  $1${NC}"
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}✅ $1${NC}"
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}❌ $1${NC}"
 }
 
-# 检查项目根目录
-check_project_root() {
-    if [ ! -f "../go.mod" ]; then
+log_step() {
+    echo -e "${PURPLE}📋 $1${NC}"
+}
+
+log_result() {
+    echo -e "${CYAN}📊 $1${NC}"
+}
+
+# 检查环境
+check_environment() {
+    log_info "检查运行环境..."
+    
+    # 检查目录
+    if [[ ! -d "01-quick-start" ]]; then
         log_error "请在 examples 目录下运行此脚本"
         exit 1
     fi
     
-    if [ ! -f "../configs/config.toml" ]; then
-        log_warning "配置文件不存在，某些示例可能无法完整运行"
-        log_info "建议运行: cp ../configs/config.example.toml ../configs/config.toml"
+    # 检查配置文件
+    if [[ ! -f "../configs/config.toml" ]]; then
+        log_warning "配置文件不存在，将使用默认配置"
+        log_info "建议运行 ./scripts/setup.sh 先设置环境"
     fi
-}
-
-# 构建项目
-build_project() {
-    log_info "构建项目..."
-    cd ..
-    if make build > /dev/null 2>&1; then
-        log_success "项目构建成功"
-    else
-        log_error "项目构建失败"
-        exit 1
+    
+    # 检查二进制文件
+    if [[ ! -f "../bin/openmanus" ]]; then
+        log_warning "未找到构建的二进制文件"
+        log_info "将只运行 Go 源码示例"
     fi
-    cd examples
+    
+    log_success "环境检查完成"
 }
 
 # 运行单个示例
 run_example() {
-    local example_path=$1
-    local example_name=$2
-    local timeout=${3:-30}
+    local category="$1"
+    local name="$2"
+    local description="$3"
+    local path="$4"
     
-    if [ ! -d "$example_path" ]; then
-        log_warning "示例不存在: $example_path"
+    echo
+    log_step "运行示例: $category/$name"
+    echo "📝 描述: $description"
+    echo "📁 路径: $path"
+    echo
+    
+    if [[ ! -d "$path" ]]; then
+        log_error "示例目录不存在: $path"
         return 1
     fi
     
-    log_info "运行示例: $example_name"
+    if [[ ! -f "$path/main.go" ]]; then
+        log_error "示例文件不存在: $path/main.go"
+        return 1
+    fi
+    
+    echo "🔄 执行中..."
     echo "----------------------------------------"
     
-    cd "$example_path"
+    # 进入示例目录并运行
+    cd "$path"
     
-    # 设置超时运行
-    timeout "${timeout}s" go run main.go 2>&1 || {
-        local exit_code=$?
-        if [ $exit_code -eq 124 ]; then
-            log_warning "$example_name 运行超时 (${timeout}s)"
+    # 设置超时时间（避免示例运行过长时间）
+    if timeout 300s go run main.go; then
+        log_success "示例运行成功"
+        local result=0
+    else
+        log_warning "示例运行超时或失败"
+        local result=1
+    fi
+    
+    cd - > /dev/null
+    echo "----------------------------------------"
+    
+    return $result
+}
+
+# 运行 CLI 示例
+run_cli_examples() {
+    if [[ ! -f "../bin/openmanus" ]]; then
+        log_warning "跳过 CLI 示例（二进制文件不存在）"
+        return
+    fi
+    
+    echo
+    log_step "运行 CLI 示例"
+    echo
+    
+    local cli_examples=(
+        "创建一个 hello_cli.txt 文件，内容为当前时间"
+        "检查 workspace 目录下的文件数量"
+        "获取 https://httpbin.org/uuid 的内容"
+    )
+    
+    for example in "${cli_examples[@]}"; do
+        echo "🔄 执行 CLI 任务: $example"
+        echo "命令: ../bin/openmanus run \"$example\""
+        echo
+        
+        if timeout 60s ../bin/openmanus run --config ../configs/config.toml "$example"; then
+            log_success "CLI 任务完成"
         else
-            log_error "$example_name 运行失败 (退出码: $exit_code)"
+            log_warning "CLI 任务失败或超时"
         fi
-        cd - > /dev/null
-        return $exit_code
-    }
+        echo
+    done
+}
+
+# 展示结果统计
+show_statistics() {
+    local total=$1
+    local success=$2
+    local failed=$((total - success))
     
-    cd - > /dev/null
-    log_success "$example_name 运行完成"
+    echo
+    echo "📊 运行统计"
+    echo "============"
+    log_result "总示例数: $total"
+    log_result "成功运行: $success"
+    log_result "运行失败: $failed"
+    
+    if [[ $total -gt 0 ]]; then
+        local success_rate=$(( success * 100 / total ))
+        log_result "成功率: ${success_rate}%"
+    fi
+    
     echo
 }
 
-# 检查 MCP 服务器
-check_mcp_server() {
-    if curl -s http://localhost:8080/health > /dev/null 2>&1; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# 启动 MCP 服务器
-start_mcp_server() {
-    log_info "启动 MCP 服务器..."
-    cd mcp/01-mcp-server
-    go run main.go > /dev/null 2>&1 &
-    local server_pid=$!
-    cd - > /dev/null
+# 展示生成的文件
+show_generated_files() {
+    echo "📁 查看生成的文件"
+    echo "=================="
     
-    # 等待服务器启动
-    for i in {1..10}; do
-        if check_mcp_server; then
-            log_success "MCP 服务器已启动 (PID: $server_pid)"
-            echo $server_pid > /tmp/mcp_server.pid
-            return 0
-        fi
-        sleep 1
-    done
-    
-    log_error "MCP 服务器启动失败"
-    kill $server_pid 2>/dev/null || true
-    return 1
-}
-
-# 停止 MCP 服务器
-stop_mcp_server() {
-    if [ -f /tmp/mcp_server.pid ]; then
-        local server_pid=$(cat /tmp/mcp_server.pid)
-        if kill $server_pid 2>/dev/null; then
-            log_success "MCP 服务器已停止"
-        fi
-        rm -f /tmp/mcp_server.pid
-    fi
-}
-
-# 主函数
-main() {
-    echo "🚀 OpenManus-Go 示例程序批量运行器"
-    echo "=================================="
-    echo
-    
-    # 解析命令行参数
-    SKIP_BUILD=false
-    EXAMPLES_TO_RUN=""
-    
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --skip-build)
-                SKIP_BUILD=true
-                shift
-                ;;
-            --examples)
-                EXAMPLES_TO_RUN="$2"
-                shift 2
-                ;;
-            --help)
-                echo "用法: $0 [选项]"
-                echo "选项:"
-                echo "  --skip-build     跳过项目构建"
-                echo "  --examples LIST  只运行指定的示例 (逗号分隔)"
-                echo "  --help          显示帮助信息"
-                echo
-                echo "示例:"
-                echo "  $0                           # 运行所有示例"
-                echo "  $0 --skip-build              # 跳过构建，运行所有示例"
-                echo "  $0 --examples basic,mcp      # 只运行基础和 MCP 示例"
-                exit 0
-                ;;
-            *)
-                log_error "未知参数: $1"
-                exit 1
-                ;;
-        esac
-    done
-    
-    # 检查环境
-    check_project_root
-    
-    # 构建项目
-    if [ "$SKIP_BUILD" = false ]; then
-        build_project
-    fi
-    
-    # 定义示例列表
-    declare -A examples
-    examples["basic-hello"]="basic/01-hello-world,Hello World 示例,10"
-    examples["basic-tools"]="basic/02-tool-usage,工具使用示例,20"
-    examples["basic-config"]="basic/03-configuration,配置管理示例,10"
-    examples["mcp-server"]="mcp/01-mcp-server,MCP 服务器示例,5"
-    examples["mcp-client"]="mcp/02-mcp-client,MCP 客户端示例,15"
-    
-    # 过滤要运行的示例
-    if [ -n "$EXAMPLES_TO_RUN" ]; then
-        IFS=',' read -ra EXAMPLE_LIST <<< "$EXAMPLES_TO_RUN"
-        filtered_examples=""
-        for example in "${EXAMPLE_LIST[@]}"; do
-            case $example in
-                basic)
-                    filtered_examples="$filtered_examples basic-hello basic-tools basic-config"
-                    ;;
-                mcp)
-                    filtered_examples="$filtered_examples mcp-server mcp-client"
-                    ;;
-                *)
-                    if [[ -v examples[$example] ]]; then
-                        filtered_examples="$filtered_examples $example"
-                    else
-                        log_warning "未知示例: $example"
-                    fi
-                    ;;
-            esac
+    if [[ -d "../workspace" ]]; then
+        echo "工作目录内容:"
+        find ../workspace -type f -name "*.txt" -o -name "*.json" -o -name "*.csv" | head -10 | while read file; do
+            echo "  📄 $file"
         done
-        EXAMPLES_TO_RUN="$filtered_examples"
-    else
-        EXAMPLES_TO_RUN="${!examples[@]}"
-    fi
-    
-    # 统计信息
-    total_examples=0
-    success_count=0
-    failed_examples=""
-    
-    # 运行示例
-    for example_key in $EXAMPLES_TO_RUN; do
-        if [[ -v examples[$example_key] ]]; then
-            IFS=',' read -ra example_info <<< "${examples[$example_key]}"
-            example_path="${example_info[0]}"
-            example_name="${example_info[1]}"
-            timeout="${example_info[2]}"
-            
-            total_examples=$((total_examples + 1))
-            
-            # 特殊处理 MCP 示例
-            if [[ $example_key == "mcp-server" ]]; then
-                # MCP 服务器示例特殊处理（后台运行）
-                log_info "启动 MCP 服务器示例（后台运行）..."
-                if start_mcp_server; then
-                    success_count=$((success_count + 1))
-                    sleep 2  # 给服务器一些启动时间
-                else
-                    failed_examples="$failed_examples $example_name"
-                fi
-            elif [[ $example_key == "mcp-client" ]]; then
-                # MCP 客户端需要服务器运行
-                if ! check_mcp_server; then
-                    log_warning "MCP 服务器未运行，跳过客户端示例"
-                    continue
-                fi
-                if run_example "$example_path" "$example_name" "$timeout"; then
-                    success_count=$((success_count + 1))
-                else
-                    failed_examples="$failed_examples $example_name"
-                fi
-            else
-                # 普通示例
-                if run_example "$example_path" "$example_name" "$timeout"; then
-                    success_count=$((success_count + 1))
-                else
-                    failed_examples="$failed_examples $example_name"
-                fi
-            fi
+        
+        local file_count=$(find ../workspace -type f | wc -l)
+        if [[ $file_count -gt 10 ]]; then
+            echo "  ... 还有 $((file_count - 10)) 个文件"
         fi
-    done
-    
-    # 清理
-    stop_mcp_server
-    
-    # 输出总结
-    echo "📊 运行总结"
-    echo "=========="
-    echo "总示例数: $total_examples"
-    echo "成功运行: $success_count"
-    echo "运行失败: $((total_examples - success_count))"
-    
-    if [ -n "$failed_examples" ]; then
-        echo "失败示例:$failed_examples"
+    else
+        echo "  📁 workspace 目录不存在"
     fi
     
     echo
-    if [ $success_count -eq $total_examples ]; then
-        log_success "🎉 所有示例运行成功！"
+}
+
+# 主要示例列表
+declare -a EXAMPLES=(
+    # 格式: "类别|名称|描述|路径"
+    "01-快速入门|Hello World|最基础的框架使用示例|01-quick-start/hello-world"
+    "01-快速入门|基础任务|展示各种基础任务执行|01-quick-start/basic-tasks"
+    "02-工具使用|文件系统|文件系统工具完整演示|02-tool-usage/filesystem"
+    "03-MCP集成|MCP客户端|MCP协议集成和外部服务调用|03-mcp-integration/mcp-client"
+    "04-实际应用|数据处理|真实数据处理工作流演示|04-real-world/data-processing"
+)
+
+# 主执行函数
+main() {
+    echo "开始运行 OpenManus-Go 示例演示..."
+    echo
+    
+    check_environment
+    
+    local total_examples=0
+    local successful_examples=0
+    
+    # 显示即将运行的示例
+    echo "📋 将要运行的示例:"
+    echo "=================="
+    for example in "${EXAMPLES[@]}"; do
+        IFS='|' read -r category name description path <<< "$example"
+        echo "  🔸 $category - $name: $description"
+        ((total_examples++))
+    done
+    echo
+    
+    # 询问用户是否继续
+    read -p "是否继续运行所有示例? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "用户取消运行"
         exit 0
-    else
-        log_warning "⚠️  部分示例运行失败"
-        exit 1
     fi
+    
+    echo
+    log_info "开始运行示例..."
+    
+    # 运行所有示例
+    for example in "${EXAMPLES[@]}"; do
+        IFS='|' read -r category name description path <<< "$example"
+        
+        if run_example "$category" "$name" "$description" "$path"; then
+            ((successful_examples++))
+        fi
+        
+        # 示例间暂停
+        if [[ ${#EXAMPLES[@]} -gt 1 ]]; then
+            echo
+            echo "按 Enter 继续下一个示例，或 Ctrl+C 退出..."
+            read -r
+        fi
+    done
+    
+    # 运行 CLI 示例
+    run_cli_examples
+    
+    # 显示统计信息
+    show_statistics $total_examples $successful_examples
+    
+    # 显示生成的文件
+    show_generated_files
+    
+    # 最终提示
+    echo "🎉 示例演示完成！"
+    echo
+    echo "📚 下一步建议:"
+    echo "=============="
+    echo "  1. 查看 workspace 目录中生成的文件"
+    echo "  2. 编辑配置文件 ../configs/config.toml 设置 API Key"
+    echo "  3. 重新运行示例体验完整功能"
+    echo "  4. 阅读各示例目录中的 README.md"
+    echo "  5. 尝试修改任务描述测试不同场景"
+    echo
+    echo "💡 提示:"
+    echo "========"
+    echo "  - 运行 ./scripts/test-examples.sh 进行自动化测试"
+    echo "  - 运行 ./scripts/setup.sh 重新设置环境"
+    echo "  - 查看 ../README.md 了解更多功能"
 }
 
 # 信号处理
-trap 'stop_mcp_server; exit 130' INT TERM
+trap 'echo; log_warning "用户中断运行"; exit 130' INT
 
-# 运行主函数
+# 执行主函数
 main "$@"

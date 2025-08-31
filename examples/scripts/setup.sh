@@ -1,9 +1,13 @@
 #!/bin/bash
 
-# OpenManus-Go 示例程序环境设置脚本
-# 用于初始化运行示例程序所需的环境
+# OpenManus-Go 示例环境设置脚本
+# 自动设置示例运行所需的环境和依赖
 
 set -e
+
+echo "🚀 OpenManus-Go 示例环境设置"
+echo "============================="
+echo
 
 # 颜色定义
 RED='\033[0;31m'
@@ -14,272 +18,241 @@ NC='\033[0m' # No Color
 
 # 日志函数
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    echo -e "${BLUE}ℹ️  $1${NC}"
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}✅ $1${NC}"
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}❌ $1${NC}"
 }
 
-# 检查 Go 环境
-check_go_environment() {
-    log_info "检查 Go 环境..."
-    
-    if ! command -v go &> /dev/null; then
-        log_error "Go 未安装，请先安装 Go 1.21+"
-        echo "安装指南: https://golang.org/doc/install"
-        exit 1
-    fi
-    
-    go_version=$(go version | grep -o 'go[0-9]\+\.[0-9]\+' | head -1)
-    log_success "Go 版本: $go_version"
-    
-    # 检查 Go 版本（简单检查）
-    if [[ "$go_version" < "go1.21" ]]; then
-        log_warning "建议使用 Go 1.21+ 版本"
-    fi
-}
-
-# 检查项目结构
-check_project_structure() {
-    log_info "检查项目结构..."
-    
-    if [ ! -f "../go.mod" ]; then
+# 检查是否在正确的目录
+check_directory() {
+    if [[ ! -d "01-quick-start" || ! -d "../configs" ]]; then
         log_error "请在 examples 目录下运行此脚本"
         exit 1
     fi
-    
-    if [ ! -f "../Makefile" ]; then
-        log_warning "Makefile 不存在，将使用 go build 命令"
+    log_success "目录检查通过"
+}
+
+# 检查 Go 环境
+check_go() {
+    if ! command -v go &> /dev/null; then
+        log_error "未找到 Go 环境，请先安装 Go 1.21+"
+        log_info "安装指南: https://golang.org/doc/install"
+        exit 1
     fi
     
-    log_success "项目结构检查通过"
+    GO_VERSION=$(go version | cut -d' ' -f3)
+    log_success "Go 环境检查通过 ($GO_VERSION)"
 }
 
-# 创建必要目录
-create_directories() {
-    log_info "创建必要目录..."
-    
-    directories=("../workspace" "../workspace/traces" "../data" "../logs")
-    
-    for dir in "${directories[@]}"; do
-        if [ ! -d "$dir" ]; then
-            mkdir -p "$dir"
-            log_success "创建目录: $dir"
+# 检查项目是否已构建
+check_build() {
+    if [[ ! -f "../bin/openmanus" ]]; then
+        log_warning "未找到构建的二进制文件，开始构建项目..."
+        
+        cd ..
+        if make build; then
+            log_success "项目构建完成"
         else
-            log_info "目录已存在: $dir"
+            log_error "项目构建失败"
+            exit 1
         fi
-    done
+        cd examples
+    else
+        log_success "项目已构建"
+    fi
 }
 
-# 设置配置文件
+# 创建工作目录
+create_directories() {
+    log_info "创建必要的目录..."
+    
+    # 创建 workspace 目录
+    mkdir -p ../workspace/{data_processing/{input,output,temp},traces,logs}
+    
+    # 创建示例数据目录
+    mkdir -p ../workspace/examples_data
+    
+    log_success "目录创建完成"
+}
+
+# 创建示例配置文件
 setup_config() {
     log_info "设置配置文件..."
     
-    config_dir="../configs"
-    config_file="$config_dir/config.toml"
-    example_config="$config_dir/config.example.toml"
+    CONFIG_PATH="../configs/config.toml"
+    EXAMPLE_CONFIG_PATH="../configs/config.example.toml"
     
-    if [ ! -f "$config_file" ]; then
-        if [ -f "$example_config" ]; then
-            cp "$example_config" "$config_file"
-            log_success "已复制配置模板到 $config_file"
-            log_warning "请编辑 $config_file 设置您的 API Key"
+    if [[ ! -f "$CONFIG_PATH" ]]; then
+        if [[ -f "$EXAMPLE_CONFIG_PATH" ]]; then
+            cp "$EXAMPLE_CONFIG_PATH" "$CONFIG_PATH"
+            log_success "配置文件创建完成"
+            log_warning "请编辑 $CONFIG_PATH 设置你的 LLM API Key"
         else
-            log_error "配置模板文件不存在: $example_config"
-        fi
-    else
-        log_info "配置文件已存在: $config_file"
-    fi
-}
-
-# 下载依赖
-download_dependencies() {
-    log_info "下载项目依赖..."
-    
-    cd ..
-    if go mod download && go mod tidy; then
-        log_success "依赖下载完成"
-    else
-        log_error "依赖下载失败"
-        exit 1
-    fi
-    cd examples
-}
-
-# 构建项目
-build_project() {
-    log_info "构建项目..."
-    
-    cd ..
-    if [ -f "Makefile" ]; then
-        if make build > /dev/null 2>&1; then
-            log_success "项目构建成功 (使用 Makefile)"
-        else
-            log_error "项目构建失败"
+            log_error "未找到配置模板文件"
             exit 1
         fi
     else
-        if go build -o bin/openmanus ./cmd/openmanus; then
-            log_success "项目构建成功 (使用 go build)"
-        else
-            log_error "项目构建失败"
-            exit 1
-        fi
+        log_success "配置文件已存在"
     fi
-    cd examples
 }
 
-# 检查可选依赖
-check_optional_dependencies() {
-    log_info "检查可选依赖..."
+# 创建示例数据文件
+create_sample_data() {
+    log_info "创建示例数据文件..."
     
-    # 检查 Chrome/Chromium（用于浏览器工具）
-    if command -v google-chrome &> /dev/null || command -v chromium-browser &> /dev/null || command -v chromium &> /dev/null; then
-        log_success "浏览器工具依赖: Chrome/Chromium 已安装"
-    else
-        log_warning "浏览器工具依赖: Chrome/Chromium 未安装，浏览器工具将不可用"
-        echo "  安装命令 (Ubuntu): sudo apt-get install chromium-browser"
-        echo "  安装命令 (macOS): brew install chromium"
-    fi
+    # 创建示例 CSV 数据
+    cat > ../workspace/examples_data/sample_sales.csv << 'EOF'
+Date,Product,Quantity,Amount
+2024-01-01,Product A,100,1000.00
+2024-01-01,Product B,80,1600.00
+2024-01-02,Product A,120,1200.00
+2024-01-02,Product C,60,900.00
+2024-01-03,Product B,90,1800.00
+2024-01-03,Product C,70,1050.00
+EOF
+
+    # 创建示例 JSON 数据
+    cat > ../workspace/examples_data/sample_config.json << 'EOF'
+{
+    "app_name": "OpenManus-Go Demo",
+    "version": "1.0.0",
+    "author": "OpenManus Team",
+    "features": [
+        "Agent Framework",
+        "Tool System",
+        "MCP Integration"
+    ],
+    "settings": {
+        "max_retries": 3,
+        "timeout": 30,
+        "debug": false
+    }
+}
+EOF
+
+    log_success "示例数据文件创建完成"
+}
+
+# 验证依赖服务
+check_optional_services() {
+    log_info "检查可选服务..."
     
     # 检查 Redis
     if command -v redis-cli &> /dev/null; then
         if redis-cli ping &> /dev/null; then
-            log_success "Redis 工具依赖: Redis 服务正在运行"
+            log_success "Redis 服务可用"
         else
-            log_warning "Redis 工具依赖: Redis 已安装但未运行"
-            echo "  启动命令: redis-server"
+            log_warning "Redis 已安装但未运行"
         fi
     else
-        log_warning "Redis 工具依赖: Redis 未安装，Redis 工具将不可用"
-        echo "  安装命令 (Ubuntu): sudo apt-get install redis-server"
-        echo "  安装命令 (macOS): brew install redis"
+        log_warning "Redis 未安装 (可选，用于缓存示例)"
     fi
     
-    # 检查 MySQL
-    if command -v mysql &> /dev/null; then
-        log_success "MySQL 工具依赖: MySQL 客户端已安装"
+    # 检查 Chrome/Chromium (用于浏览器示例)
+    if command -v google-chrome &> /dev/null || command -v chromium &> /dev/null; then
+        log_success "Chrome/Chromium 可用 (浏览器示例)"
     else
-        log_warning "MySQL 工具依赖: MySQL 客户端未安装，MySQL 工具将不可用"
-        echo "  安装命令 (Ubuntu): sudo apt-get install mysql-client"
-        echo "  安装命令 (macOS): brew install mysql"
+        log_warning "Chrome/Chromium 未找到 (浏览器示例将无法运行)"
+    fi
+    
+    # 检查 Docker
+    if command -v docker &> /dev/null; then
+        log_success "Docker 可用 (容器示例)"
+    else
+        log_warning "Docker 未安装 (容器示例将无法运行)"
     fi
 }
 
-# 运行基本测试
+# 运行基础测试
 run_basic_tests() {
-    log_info "运行基本测试..."
+    log_info "运行基础测试..."
     
-    if [ -x "scripts/test-examples.sh" ]; then
-        if ./scripts/test-examples.sh > /dev/null 2>&1; then
-            log_success "基本测试通过"
-        else
-            log_warning "基本测试失败，请检查代码"
-        fi
+    # 测试配置验证
+    if ../bin/openmanus config validate --config ../configs/config.toml &> /dev/null; then
+        log_success "配置验证通过"
     else
-        log_warning "测试脚本不存在或无执行权限"
+        log_warning "配置验证失败，请检查 API Key 设置"
+    fi
+    
+    # 测试工具列表
+    if ../bin/openmanus tools list --config ../configs/config.toml &> /dev/null; then
+        log_success "工具系统正常"
+    else
+        log_warning "工具系统测试失败"
     fi
 }
 
-# 显示使用指南
+# 显示运行指南
 show_usage_guide() {
     echo
     echo "🎉 环境设置完成！"
+    echo
+    echo "📚 快速开始指南:"
     echo "================"
     echo
-    echo "📚 下一步操作："
+    echo "1. 设置 API Key (重要):"
+    echo "   编辑 ../configs/config.toml"
+    echo "   设置 [llm] 部分的 api_key"
     echo
-    echo "1. 设置 API Key（重要！）"
-    echo "   编辑文件: ../configs/config.toml"
-    echo "   设置 api_key = \"your-actual-api-key\""
+    echo "2. 运行 Hello World 示例:"
+    echo "   cd 01-quick-start/hello-world"
+    echo "   go run main.go"
     echo
-    echo "2. 运行示例程序"
-    echo "   测试所有示例: ./scripts/test-examples.sh"
-    echo "   运行所有示例: ./scripts/run-all.sh"
-    echo "   运行特定示例: ./scripts/run-all.sh --examples basic"
+    echo "3. 使用 CLI 工具:"
+    echo "   ../bin/openmanus run \"创建一个测试文件\""
     echo
-    echo "3. 手动运行示例"
-    echo "   cd basic/01-hello-world && go run main.go"
-    echo "   cd basic/02-tool-usage && go run main.go"
-    echo "   cd basic/03-configuration && go run main.go"
+    echo "4. 运行所有示例:"
+    echo "   ./scripts/run-all.sh"
     echo
-    echo "4. MCP 服务器测试"
-    echo "   启动服务器: cd mcp/01-mcp-server && go run main.go"
-    echo "   测试客户端: cd mcp/02-mcp-client && go run main.go"
+    echo "5. 测试示例:"
+    echo "   ./scripts/test-examples.sh"
     echo
-    echo "5. 查看文档"
-    echo "   主文档: cat README.md"
-    echo "   示例文档: cat basic/01-hello-world/README.md"
+    echo "📁 重要目录:"
+    echo "============"
+    echo "  ../workspace/          - 工作目录 (文件操作)"
+    echo "  ../workspace/traces/   - 执行轨迹"
+    echo "  ../configs/config.toml - 配置文件"
+    echo "  ../bin/openmanus      - CLI 工具"
     echo
-    echo "💡 提示："
-    echo "  - 所有示例都有详细的 README.md 文档"
-    echo "  - 没有 API Key 时示例会进入演示模式"
-    echo "  - 使用 --help 查看脚本帮助信息"
+    echo "🔧 故障排除:"
+    echo "============"
+    echo "  - 如果示例运行失败，检查 API Key 设置"
+    echo "  - 如果工具调用失败，检查目录权限"
+    echo "  - 如果网络请求失败，检查网络连接"
+    echo
+    echo "💡 提示:"
+    echo "========"
+    echo "  - 每个示例目录都有详细的 README.md"
+    echo "  - 可以修改任务描述来测试不同场景"
+    echo "  - 查看 workspace 目录验证文件操作结果"
     echo
 }
 
-# 主函数
+# 主执行流程
 main() {
-    echo "🔧 OpenManus-Go 示例程序环境设置"
-    echo "================================"
+    echo "开始设置 OpenManus-Go 示例环境..."
     echo
     
-    # 解析命令行参数
-    SKIP_BUILD=false
-    SKIP_DEPS=false
-    
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --skip-build)
-                SKIP_BUILD=true
-                shift
-                ;;
-            --skip-deps)
-                SKIP_DEPS=true
-                shift
-                ;;
-            --help)
-                echo "用法: $0 [选项]"
-                echo "选项:"
-                echo "  --skip-build     跳过项目构建"
-                echo "  --skip-deps      跳过依赖检查"
-                echo "  --help          显示帮助信息"
-                exit 0
-                ;;
-            *)
-                log_error "未知参数: $1"
-                exit 1
-                ;;
-        esac
-    done
-    
-    # 执行设置步骤
-    check_go_environment
-    check_project_structure
+    check_directory
+    check_go
+    check_build
     create_directories
     setup_config
-    
-    if [ "$SKIP_DEPS" = false ]; then
-        download_dependencies
-    fi
-    
-    if [ "$SKIP_BUILD" = false ]; then
-        build_project
-    fi
-    
-    check_optional_dependencies
+    create_sample_data
+    check_optional_services
     run_basic_tests
     show_usage_guide
 }
 
-# 运行主函数
+# 执行主函数
 main "$@"
