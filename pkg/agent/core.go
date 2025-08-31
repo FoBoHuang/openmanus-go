@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -42,9 +43,8 @@ type BaseAgent struct {
 	memory       *Memory
 	reflector    *Reflector
 	config       *Config
-	mcpExecutor  *MCPExecutor            // MCP 执行器
-	taskAnalyzer *TaskCompletionAnalyzer // 任务完成度分析器
-	taskManager  *TaskManager            // 多步任务管理器
+	mcpExecutor  *MCPExecutor // MCP 执行器
+	// 移除了 taskAnalyzer 和 taskManager，采用统一线性执行策略
 }
 
 // Config Agent 配置
@@ -61,9 +61,9 @@ type Config struct {
 // DefaultConfig 返回默认配置
 func DefaultConfig() *Config {
 	return &Config{
-		MaxSteps:        10,
+		MaxSteps:        30, // 增加到30步，类似OpenManus的策略
 		MaxTokens:       8000,
-		MaxDuration:     5 * time.Minute,
+		MaxDuration:     10 * time.Minute, // 增加执行时间限制
 		Temperature:     0.1,
 		ReflectionSteps: 3,
 		MaxRetries:      2,
@@ -85,8 +85,7 @@ func NewBaseAgent(llmClient llm.Client, toolRegistry *tool.Registry, config *Con
 	planner := NewPlanner(llmClient, toolRegistry)
 	memory := NewMemory()
 	reflector := NewReflector(llmClient)
-	taskAnalyzer := NewTaskCompletionAnalyzer(llmClient)
-	taskManager := NewTaskManager(llmClient)
+	// 移除了 taskAnalyzer 和 taskManager，采用统一线性执行策略
 
 	return &BaseAgent{
 		llmClient:    llmClient,
@@ -95,8 +94,7 @@ func NewBaseAgent(llmClient llm.Client, toolRegistry *tool.Registry, config *Con
 		memory:       memory,
 		reflector:    reflector,
 		config:       config,
-		taskAnalyzer: taskAnalyzer,
-		taskManager:  taskManager,
+		// 移除了 taskAnalyzer 和 taskManager，采用统一线性执行策略
 	}
 }
 
@@ -170,8 +168,7 @@ func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agen
 		reflector:    reflector,
 		config:       agentConfig,
 		mcpExecutor:  mcpExecutor, // 保留引用用于清理
-		taskAnalyzer: NewTaskCompletionAnalyzer(llmClient),
-		taskManager:  NewTaskManager(llmClient),
+		// 移除了 taskAnalyzer 和 taskManager，采用统一线性执行策略
 	}
 }
 
@@ -220,7 +217,8 @@ func (a *BaseAgent) ShouldStop(trace *state.Trace) bool {
 	return false
 }
 
-// LoopWithTaskManagement 使用多步任务管理的执行循环
+/* LoopWithTaskManagement 已移除 - 现在使用统一线性执行策略
+   原来的任务分解和管理功能已被简化为统一的线性执行模式，与 OpenManus 保持一致
 func (a *BaseAgent) LoopWithTaskManagement(ctx context.Context, goal string) (string, error) {
 	logger.Infow("agent.task_loop.start", "goal", goal)
 
@@ -319,40 +317,172 @@ func (a *BaseAgent) LoopWithTaskManagement(ctx context.Context, goal string) (st
 		return a.generateTaskCompletionSummary(plan, summary), nil
 	}
 }
+*/
 
-// Loop 执行完整的控制循环（保持向后兼容）
+// Loop 执行完整的控制循环（统一线性执行策略）
 func (a *BaseAgent) Loop(ctx context.Context, goal string) (string, error) {
-	// 智能选择执行模式
-	if a.isComplexGoal(goal) {
-		logger.Infow("agent.loop.using_task_management", "goal", goal)
-		return a.LoopWithTaskManagement(ctx, goal)
-	}
-
-	// 对于简单目标，使用原有逻辑
-	logger.Infow("agent.loop.using_standard_mode", "goal", goal)
-	return a.standardLoop(ctx, goal)
+	// 使用统一的线性执行策略，与 OpenManus 保持一致
+	logger.Infow("agent.loop.unified_execution", "goal", goal)
+	return a.unifiedLoop(ctx, goal)
 }
 
-// isComplexGoal 判断是否为复杂目标
-func (a *BaseAgent) isComplexGoal(goal string) bool {
-	goalLower := strings.ToLower(goal)
+// 移除了 isComplexGoal 函数，现在使用统一的线性执行策略
 
-	// 检测多步任务的关键词
-	multiStepKeywords := []string{"并", "然后", "and", "also", "additionally", "保存", "写入", "文件", "总结", "分析"}
-	keywordCount := 0
+// unifiedLoop 统一线性执行循环（类似 OpenManus 的策略）
+func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error) {
+	// 创建初始轨迹
+	trace := &state.Trace{
+		Goal: goal,
+		Budget: state.Budget{
+			MaxSteps:    a.config.MaxSteps,
+			MaxTokens:   a.config.MaxTokens,
+			MaxDuration: a.config.MaxDuration,
+			StartTime:   time.Now(),
+		},
+		Status:    state.TraceStatusRunning,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
 
-	for _, keyword := range multiStepKeywords {
-		if strings.Contains(goalLower, keyword) {
-			keywordCount++
+	var finalResult string
+
+	logger.Infof("🚀 [AGENT] Starting unified execution: %s", goal)
+	logger.Infof("📊 [BUDGET] Max steps: %d | Max tokens: %d | Max duration: %s", a.config.MaxSteps, a.config.MaxTokens, a.config.MaxDuration.String())
+	logger.Infof("═══════════════════════════════════════════════════════════════")
+
+	for !a.ShouldStop(trace) {
+		// 检查上下文取消
+		select {
+		case <-ctx.Done():
+			trace.Status = state.TraceStatusCanceled
+			return "", ctx.Err()
+		default:
+		}
+
+		stepNum := len(trace.Steps) + 1
+		logger.Infof("")
+		logger.Infof("🤔 [STEP %d/%d] Planning next action...", stepNum, a.config.MaxSteps)
+		logger.Infof("⏱️  [PROGRESS] %.1f%% complete | Elapsed: %v",
+			float64(stepNum-1)/float64(a.config.MaxSteps)*100,
+			time.Since(trace.Budget.StartTime).Round(time.Second))
+
+		// 规划下一步动作
+		action, err := a.Plan(ctx, goal, trace)
+		if err != nil {
+			trace.Status = state.TraceStatusFailed
+			logger.Errorf("❌ [PLAN] Planning failed: %v", err)
+			return "", fmt.Errorf("planning failed: %w", err)
+		}
+
+		// 添加步骤到轨迹
+		_ = trace.AddStep(action)
+
+		// 处理直接回答 - 简化处理，直接接受
+		if action.Name == "direct_answer" {
+			potentialResult := getStringFromArgs(action.Args, "answer")
+			finalResult = potentialResult
+			trace.Status = state.TraceStatusCompleted
+			logger.Infof("✅ [ANSWER] Task completed with direct answer")
+			break
+		}
+
+		// 处理停止指令
+		if action.Name == "stop" {
+			finalResult = getStringFromArgs(action.Args, "reason")
+			trace.Status = state.TraceStatusCompleted
+			logger.Infof("🛑 [STOP] %s", finalResult)
+			break
+		}
+
+		// 执行工具调用
+		logger.Infof("⚡ [EXEC] Executing %s...", action.Name)
+		observation, err := a.Act(ctx, action)
+
+		if err != nil {
+			// 执行失败，但继续运行让 Agent 处理错误
+			observation = &state.Observation{
+				Tool:   action.Name,
+				ErrMsg: err.Error(),
+			}
+			logger.Warnf("⚠️  [ERROR] Tool execution failed: %v", err)
+		}
+
+		// 更新观测结果
+		trace.UpdateObservation(observation)
+
+		// 记录执行结果
+		if observation.ErrMsg != "" {
+			logger.Warnf("❌ [RESULT] %s failed: %s", action.Name, observation.ErrMsg)
+		} else {
+			outputPreview := ""
+			if observation.Output != nil {
+				if outputBytes, err := json.Marshal(observation.Output); err == nil {
+					outputPreview = truncateString(string(outputBytes), 150)
+				}
+			}
+			logger.Infof("✅ [RESULT] %s completed: %s", action.Name, outputPreview)
+		}
+
+		// 检查预算
+		if trace.IsExceededBudget() {
+			trace.Status = state.TraceStatusFailed // 使用现有的状态
+			finalResult = fmt.Sprintf("Execution stopped due to budget limits. Completed %d steps.", len(trace.Steps))
+			logger.Warnf("💰 [BUDGET] Execution stopped due to budget limits")
+			break
 		}
 	}
 
-	// 如果包含多个关键词，或者明确包含文件操作，认为是复杂目标
-	return keywordCount >= 2 ||
-		strings.Contains(goalLower, "保存") ||
-		strings.Contains(goalLower, "写入") ||
-		strings.Contains(goalLower, "文件")
+	// 如果没有明确的结果，生成默认摘要
+	if finalResult == "" {
+		finalResult = a.generateExecutionSummary(trace)
+	}
+
+	logger.Infof("")
+	logger.Infof("═══════════════════════════════════════════════════════════════")
+	logger.Infof("🏁 [DONE] Execution completed!")
+	logger.Infof("📋 [SUMMARY] Goal: %s", goal)
+	logger.Infof("📊 [STATS] Steps: %d/%d | Status: %s | Duration: %v",
+		len(trace.Steps), a.config.MaxSteps, trace.Status, time.Since(trace.Budget.StartTime).Round(time.Second))
+	if len(trace.Steps) > 0 {
+		logger.Infof("🔍 [STEPS] Execution trace:")
+		for i, step := range trace.Steps {
+			status := "✅"
+			if step.Observation != nil && step.Observation.ErrMsg != "" {
+				status = "❌"
+			}
+			logger.Infof("   %d. %s %s", i+1, status, step.Action.Name)
+		}
+	}
+	logger.Infof("═══════════════════════════════════════════════════════════════")
+
+	return finalResult, nil
 }
+
+// generateExecutionSummary 生成执行摘要
+func (a *BaseAgent) generateExecutionSummary(trace *state.Trace) string {
+	var summary strings.Builder
+
+	summary.WriteString(fmt.Sprintf("Execution Summary:\n"))
+	summary.WriteString(fmt.Sprintf("Goal: %s\n", trace.Goal))
+	summary.WriteString(fmt.Sprintf("Status: %s\n", trace.Status))
+	summary.WriteString(fmt.Sprintf("Steps: %d\n", len(trace.Steps)))
+	summary.WriteString(fmt.Sprintf("Duration: %v\n", time.Since(trace.Budget.StartTime).Round(time.Second)))
+
+	if len(trace.Steps) > 0 {
+		summary.WriteString("\nSteps executed:\n")
+		for i, step := range trace.Steps {
+			status := "✅"
+			if step.Observation != nil && step.Observation.ErrMsg != "" {
+				status = "❌"
+			}
+			summary.WriteString(fmt.Sprintf("%d. %s %s\n", i+1, status, step.Action.Name))
+		}
+	}
+
+	return summary.String()
+}
+
+// truncateString 在 planner.go 中已定义，这里移除重复定义
 
 // standardLoop 标准执行循环（原有逻辑）
 func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, error) {
@@ -404,46 +534,13 @@ func (a *BaseAgent) standardLoop(ctx context.Context, goal string) (string, erro
 		// 添加步骤到轨迹
 		_ = trace.AddStep(action)
 
-		// 处理直接回答 - 使用任务完成度分析来验证
+		// 处理直接回答 - 简化处理，直接接受（与unified模式一致）
 		if action.Name == "direct_answer" {
 			potentialResult := getStringFromArgs(action.Args, "answer")
-
-			// 使用任务完成度分析器来验证任务是否真正完成
-			if a.taskAnalyzer != nil {
-				completionResult, err := a.taskAnalyzer.AnalyzeTaskCompletion(ctx, goal, trace)
-				if err != nil {
-					logger.Warnw("Task completion analysis failed, accepting direct answer", "error", err)
-					finalResult = potentialResult
-					trace.Status = state.TraceStatusCompleted
-					break
-				}
-
-				if completionResult.IsComplete {
-					// 任务确实完成了
-					finalResult = potentialResult
-					trace.Status = state.TraceStatusCompleted
-					logger.Infof("✅ [ANSWER] Task verified as complete (confidence: %.1f)", completionResult.Confidence)
-					logger.Infof("📋 [SUMMARY] Completed %d tasks", len(completionResult.CompletedTasks))
-					break
-				} else {
-					// 任务还未完成，继续执行
-					logger.Infof("⏳ [CONTINUE] Task incomplete - %d pending tasks", len(completionResult.PendingTasks))
-					logger.Debugf("💡 [REASON] %s", completionResult.Reason)
-
-					// 不执行 direct_answer，而是继续循环让 Agent 完成剩余任务
-					// 移除最后一个 direct_answer 步骤，因为任务未完成
-					if len(trace.Steps) > 0 {
-						trace.Steps = trace.Steps[:len(trace.Steps)-1]
-					}
-					continue
-				}
-			} else {
-				// 如果没有任务分析器，使用原来的逻辑
-				finalResult = potentialResult
-				trace.Status = state.TraceStatusCompleted
-				logger.Infof("✅ [ANSWER] Task completed")
-				break
-			}
+			finalResult = potentialResult
+			trace.Status = state.TraceStatusCompleted
+			logger.Infof("✅ [ANSWER] Task completed with direct answer")
+			break
 		}
 
 		// 处理停止指令
