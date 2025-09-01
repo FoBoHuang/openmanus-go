@@ -7,7 +7,6 @@ require (
 	github.com/go-rod/rod v0.114.5
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/gocolly/colly/v2 v2.1.0
-	github.com/google/uuid v1.6.0
 	github.com/r3labs/sse/v2 v2.10.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
