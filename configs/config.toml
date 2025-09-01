@@ -78,12 +78,12 @@ db = 0
 
 # Elasticsearch database configuration (optional)
 [tools.database.elasticsearch]
-addresses = ["http://localhost:9200"]  # 设置为空数组以禁用 Elasticsearch 工具
+addresses = []  # 设置为空数组以禁用 Elasticsearch 工具
 username = ""
 password = ""
 
 [mcp.servers]
-# Higress mcp-stock-helper（示例名称可自定义）
+# Higress mcp-stock-helper
 [mcp.servers.mcp-stock-helper]
 # Higress MCP 的 SSE 入口；代码会自动补 /sse，保留也没问题
 # url = "https://mcp.higress.ai/mcp-stock-helper/cmemfn9hv008u9901gm0w3uxq"
@@ -91,3 +91,5 @@ url = "https://mcp.higress.ai/mcp-stock-helper/cmetri2n6009ia701z634091r"
 # 如果服务端需要鉴权或自定义 Header，这里填
 # headers.Authorization = "Bearer <TOKEN>"
 # headers.X-API-Key = "<KEY>"
+[mcp.servers.mcp-calendar-holiday-helper]
+url="https://mcp.higress.ai/mcp-calendar-holiday-helper/cmetri2n6009ia701z634091r"

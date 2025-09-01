@@ -173,7 +173,7 @@ test-tools: build
 # 测试 MCP 连接
 test-mcp: build
 	@echo "🔌 测试 MCP 连接..."
-	@./bin/openmanus run --config configs/config.toml "测试 MCP 工具连接" --dry-run
+	@./bin/openmanus run --config configs/config.toml --max-steps 3 "列出可用的 MCP 工具"
 	@echo "✅ MCP 连接测试完成"
 
 # 构建示例程序
