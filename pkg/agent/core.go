@@ -44,7 +44,6 @@ type BaseAgent struct {
 	reflector    *Reflector
 	config       *Config
 	mcpExecutor  *MCPExecutor // MCP 执行器
-	// 移除了 taskAnalyzer 和 taskManager，采用统一线性执行策略
 }
 
 // Config Agent 配置
@@ -85,7 +84,6 @@ func NewBaseAgent(llmClient llm.Client, toolRegistry *tool.Registry, config *Con
 	planner := NewPlanner(llmClient, toolRegistry)
 	memory := NewMemory()
 	reflector := NewReflector(llmClient)
-	// 移除了 taskAnalyzer 和 taskManager，采用统一线性执行策略
 
 	return &BaseAgent{
 		llmClient:    llmClient,
@@ -94,7 +92,6 @@ func NewBaseAgent(llmClient llm.Client, toolRegistry *tool.Registry, config *Con
 		memory:       memory,
 		reflector:    reflector,
 		config:       config,
-		// 移除了 taskAnalyzer 和 taskManager，采用统一线性执行策略
 	}
 }
 
@@ -181,7 +178,6 @@ func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agen
 		reflector:    reflector,
 		config:       agentConfig,
 		mcpExecutor:  mcpExecutor, // 保留引用用于清理
-		// 移除了 taskAnalyzer 和 taskManager，采用统一线性执行策略
 	}
 }
 
@@ -236,8 +232,6 @@ func (a *BaseAgent) Loop(ctx context.Context, goal string) (string, error) {
 	logger.Infow("agent.loop.unified_execution", "goal", goal)
 	return a.unifiedLoop(ctx, goal)
 }
-
-// 移除了 isComplexGoal 函数，现在使用统一的线性执行策略
 
 // unifiedLoop 统一线性执行循环（类似 OpenManus 的策略）
 func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error) {
@@ -392,8 +386,6 @@ func (a *BaseAgent) generateExecutionSummary(trace *state.Trace) string {
 
 	return summary.String()
 }
-
-// truncateString 在 planner.go 中已定义，这里移除重复定义
 
 // getStringFromArgs 从参数中获取字符串值
 func getStringFromArgs(args map[string]any, key string) string {
