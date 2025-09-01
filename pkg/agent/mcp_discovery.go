@@ -43,11 +43,11 @@ func NewMCPDiscoveryService(cfg *config.Config) *MCPDiscoveryService {
 
 // Start 启动工具发现服务
 func (s *MCPDiscoveryService) Start(ctx context.Context) error {
-	logger.Get().Sugar().Info("Starting MCP tool discovery service")
+	logger.Info("Starting MCP tool discovery service")
 
 	// 立即执行一次发现
 	if err := s.discoverAllTools(ctx); err != nil {
-		logger.Get().Sugar().Warnw("Initial tool discovery failed", "error", err)
+		logger.Warnw("Initial tool discovery failed", "error", err)
 		// 不要因为初始发现失败就退出，可能是网络问题
 	}
 
@@ -58,11 +58,11 @@ func (s *MCPDiscoveryService) Start(ctx context.Context) error {
 		for {
 			select {
 			case <-ctx.Done():
-				logger.Get().Sugar().Info("MCP discovery service stopped")
+				logger.Info("MCP discovery service stopped")
 				return
 			case <-ticker.C:
 				if err := s.discoverAllTools(ctx); err != nil {
-					logger.Get().Sugar().Warnw("Periodic tool discovery failed", "error", err)
+					logger.Warnw("Periodic tool discovery failed", "error", err)
 				}
 			}
 		}
@@ -76,7 +76,7 @@ func (s *MCPDiscoveryService) discoverAllTools(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	logger.Get().Sugar().Debugw("Discovering tools from MCP servers", "server_count", len(s.config.MCP.Servers))
+	logger.Debugw("Discovering tools from MCP servers", "server_count", len(s.config.MCP.Servers))
 
 	newDiscoveredTools := make(map[string]*MCPToolInfo)
 	newServerTools := make(map[string][]*MCPToolInfo)
@@ -84,7 +84,7 @@ func (s *MCPDiscoveryService) discoverAllTools(ctx context.Context) error {
 	for serverName, serverConfig := range s.config.MCP.Servers {
 		tools, err := s.discoverToolsFromServer(ctx, serverName, serverConfig)
 		if err != nil {
-			logger.Get().Sugar().Warnw("Failed to discover tools from server",
+			logger.Warnw("Failed to discover tools from server",
 				"server", serverName, "error", err)
 			continue
 		}
@@ -113,7 +113,7 @@ func (s *MCPDiscoveryService) discoverAllTools(ctx context.Context) error {
 	s.serverTools = newServerTools
 	s.lastUpdate = time.Now()
 
-	logger.Get().Sugar().Infow("Tool discovery completed",
+	logger.Infow("Tool discovery completed",
 		"total_tools", len(s.discoveredTools),
 		"servers", len(s.serverTools))
 
@@ -170,7 +170,7 @@ func (s *MCPDiscoveryService) discoverToolsFromServer(ctx context.Context, serve
 		}
 	}
 
-	logger.Get().Sugar().Debugw("Discovered tools from server",
+	logger.Debugw("Discovered tools from server",
 		"server", serverName, "tool_count", len(tools))
 
 	return tools, nil

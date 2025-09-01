@@ -130,7 +130,7 @@ func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agen
 
 			ctx := context.Background()
 			if err := mcpDiscovery.Start(ctx); err != nil {
-				logger.Get().Sugar().Warnw("Failed to start MCP discovery service", "error", err)
+				logger.Warnw("Failed to start MCP discovery service", "error", err)
 				return
 			}
 
@@ -163,9 +163,9 @@ func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agen
 		// 等待 MCP 工具注册完成，但设置超时避免无限等待
 		select {
 		case <-mcpReady:
-			logger.Get().Sugar().Infow("MCP tools registration completed")
+			logger.Infow("MCP tools registration completed")
 		case <-time.After(5 * time.Second):
-			logger.Get().Sugar().Warnw("MCP tools registration timeout, proceeding without MCP tools")
+			logger.Warnw("MCP tools registration timeout, proceeding without MCP tools")
 		}
 	}
 
