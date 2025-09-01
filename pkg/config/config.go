@@ -99,6 +99,12 @@ type ToolsConfig struct {
 			Password string `mapstructure:"password"`
 			DB       int    `mapstructure:"db"`
 		} `mapstructure:"redis"`
+
+		Elasticsearch struct {
+			Addresses []string `mapstructure:"addresses"`
+			Username  string   `mapstructure:"username"`
+			Password  string   `mapstructure:"password"`
+		} `mapstructure:"elasticsearch"`
 	} `mapstructure:"database"`
 }
 
@@ -357,6 +363,11 @@ dsn = "user:password@tcp(localhost:3306)/dbname"
 addr = "localhost:6379"
 password = ""
 db = 0
+
+[tools.database.elasticsearch]
+addresses = ["http://localhost:9200"]
+username = ""
+password = ""
 
 [logging]
 # level: debug | info | warn | error

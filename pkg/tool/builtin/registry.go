@@ -60,6 +60,21 @@ func RegisterBuiltinTools(registry *tool.Registry, cfg *config.Config) error {
 		}
 	}
 
+	// 注册 Elasticsearch 工具（如果配置了）
+	if len(cfg.Tools.Database.Elasticsearch.Addresses) > 0 {
+		elasticsearchTool, err := NewElasticsearchTool(
+			cfg.Tools.Database.Elasticsearch.Addresses,
+			cfg.Tools.Database.Elasticsearch.Username,
+			cfg.Tools.Database.Elasticsearch.Password,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create elasticsearch tool: %w", err)
+		}
+		if err := registry.Register(elasticsearchTool); err != nil {
+			return fmt.Errorf("failed to register elasticsearch tool: %w", err)
+		}
+	}
+
 	// 注册浏览器工具
 	timeout := time.Duration(cfg.Tools.Browser.Timeout) * time.Second
 	browserTool, err := NewBrowserTool(cfg.Tools.Browser.Headless, timeout)
@@ -101,6 +116,7 @@ func GetBuiltinToolsList() []string {
 		"file_copy",
 		"redis",
 		"mysql",
+		"elasticsearch",
 		"browser",
 		"crawler",
 		"direct_answer",
@@ -135,6 +151,15 @@ func CreateToolFromConfig(toolName string, cfg *config.Config) (tool.Tool, error
 			return nil, fmt.Errorf("mysql configuration is missing")
 		}
 		return NewMySQLTool(cfg.Tools.Database.MySQL.DSN)
+	case "elasticsearch":
+		if len(cfg.Tools.Database.Elasticsearch.Addresses) == 0 {
+			return nil, fmt.Errorf("elasticsearch configuration is missing")
+		}
+		return NewElasticsearchTool(
+			cfg.Tools.Database.Elasticsearch.Addresses,
+			cfg.Tools.Database.Elasticsearch.Username,
+			cfg.Tools.Database.Elasticsearch.Password,
+		)
 	case "browser":
 		timeout := time.Duration(cfg.Tools.Browser.Timeout) * time.Second
 		return NewBrowserTool(cfg.Tools.Browser.Headless, timeout)
@@ -161,6 +186,10 @@ func ValidateToolConfig(toolName string, cfg *config.Config) error {
 	case "mysql":
 		if cfg.Tools.Database.MySQL.DSN == "" {
 			return fmt.Errorf("mysql.dsn is required")
+		}
+	case "elasticsearch":
+		if len(cfg.Tools.Database.Elasticsearch.Addresses) == 0 {
+			return fmt.Errorf("elasticsearch.addresses is required")
 		}
 	case "http", "http_client", "fs", "file_copy", "browser", "crawler", "direct_answer":
 		// 这些工具有默认配置，无需特殊验证

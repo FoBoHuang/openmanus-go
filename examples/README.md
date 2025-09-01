@@ -15,6 +15,7 @@ examples/
 │   ├── network/             # 网络请求工具
 │   ├── browser/             # 浏览器自动化
 │   └── database/            # 数据库操作
+├── 05-elasticsearch/        # Elasticsearch 搜索示例
 ├── 03-mcp-integration/      # MCP 集成示例
 │   ├── mcp-server/          # MCP 服务器示例
 │   ├── mcp-client/          # MCP 客户端示例
@@ -80,6 +81,12 @@ go run main.go
 - **browser**：浏览器自动化和页面操作
 - **database**：Redis 和 MySQL 数据库操作
 
+### 05-elasticsearch - Elasticsearch 搜索
+
+**适合人群**：需要使用搜索引擎功能的开发者
+
+- **完整示例**：展示 Elasticsearch 的索引管理、文档操作、复杂搜索等功能
+
 ### 03-mcp-integration - MCP 集成
 
 **适合人群**：需要集成外部服务的开发者
@@ -105,6 +112,7 @@ go run main.go
 ### 可选要求
 - Redis（用于数据库示例）
 - MySQL（用于数据库示例）
+- Elasticsearch（用于搜索示例）
 - Chrome/Chromium（用于浏览器示例）
 - Docker（用于容器化示例）
 

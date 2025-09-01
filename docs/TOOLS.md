@@ -8,7 +8,7 @@
 
 - 访问网络资源（HTTP 请求）
 - 操作文件系统
-- 查询数据库
+- 查询数据库（MySQL、Redis、Elasticsearch）
 - 控制浏览器
 - 执行系统命令
 - 处理数据分析任务
@@ -156,7 +156,43 @@ type Tool interface {
 }
 ```
 
-### 6. 爬虫工具
+### 6. Elasticsearch 工具
+
+**功能**：Elasticsearch 搜索引擎操作
+
+**支持操作**：
+- 索引管理：`create_index`, `delete_index`, `mapping`
+- 文档操作：`index`, `get`, `update`, `delete`, `bulk`
+- 搜索功能：`search`（支持复杂查询、过滤、排序）
+
+**使用示例**：
+```json
+{
+  "name": "elasticsearch",
+  "args": {
+    "operation": "search",
+    "index": "my_index",
+    "query": {
+      "match": {
+        "content": "search term"
+      }
+    },
+    "size": 10
+  }
+}
+```
+
+**输出**：
+```json
+{
+  "success": true,
+  "hits": [...],
+  "total": 42,
+  "took": 15
+}
+```
+
+### 7. 爬虫工具
 
 **功能**：网页内容抓取
 
