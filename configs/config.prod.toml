@@ -1,5 +1,5 @@
-# OpenManus-Go Configuration Example
-# Copy this file to config.toml and customize as needed
+# OpenManus-Go Production Configuration
+# 生产环境配置
 
 [llm]
 model = "deepseek-chat"
@@ -7,7 +7,7 @@ base_url = "https://api.deepseek.com/v1"
 api_key = "sk-a83be43ee33544f186e5fd7b5dab2ca8"  # 🔑 REQUIRED: Set your OpenAI API key
 temperature = 0.1
 max_tokens = 4000
-timeout = 300  # 增加到 5 分钟，与 agent.max_duration 匹配
+timeout = 300
 
 [agent]
 max_steps = 10
@@ -26,34 +26,20 @@ host = "localhost"
 port = 8080
 
 [storage]
-type = "file"  # Options: file, memory, redis, s3
+type = "file"
 base_path = "./data/traces"
 
-# Redis storage configuration (optional)
-[storage.redis]
-addr = "localhost:6379"
-password = ""
-db = 0
-
 [logging]
-# level: debug | info | warn | error
-level = "info"
-# output: console | file | both
-output = "console"
-# file_path used when output contains file
+# 生产环境使用 warn 级别，只显示警告和错误
+level = "warn"
+# 输出到文件而不是控制台
+output = "file"
 file_path = "./log/openmanus.log"
-
-# S3 storage configuration (optional)  
-[storage.s3]
-region = "us-east-1"
-bucket = "openmanus-traces"
-access_key = ""
-secret_key = ""
 
 # HTTP tool configuration
 [tools.http]
 timeout = 60
-allowed_domains = []  # Empty = allow all
+allowed_domains = []
 blocked_domains = ["localhost", "127.0.0.1"]
 
 # File system tool configuration
@@ -69,7 +55,7 @@ user_agent = "OpenManus-Go/1.0"
 
 # Database configurations (optional)
 [tools.database.mysql]
-dsn = ""  # 设置为空字符串以禁用MySQL工具
+dsn = ""
 
 [tools.database.redis]
 addr = "localhost:6379"
@@ -77,11 +63,5 @@ password = ""
 db = 0
 
 [mcp.servers]
-# Higress mcp-stock-helper（示例名称可自定义）
 [mcp.servers.mcp-stock-helper]
-# Higress MCP 的 SSE 入口；代码会自动补 /sse，保留也没问题
-# url = "https://mcp.higress.ai/mcp-stock-helper/cmemfn9hv008u9901gm0w3uxq"
 url = "https://mcp.higress.ai/mcp-stock-helper/cmetri2n6009ia701z634091r"
-# 如果服务端需要鉴权或自定义 Header，这里填
-# headers.Authorization = "Bearer <TOKEN>"
-# headers.X-API-Key = "<KEY>"

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -244,7 +245,7 @@ func testAllTools(cfg *config.Config) error {
 
 func testRedisTool(toolInstance tool.Tool) error {
 	if redisTool, ok := toolInstance.(*builtin.RedisTool); ok {
-		if err := redisTool.Ping(nil); err != nil {
+		if err := redisTool.Ping(context.TODO()); err != nil {
 			logger.Errorf("❌ Redis connection failed: %v", err)
 			return err
 		}
@@ -255,7 +256,7 @@ func testRedisTool(toolInstance tool.Tool) error {
 
 func testMySQLTool(toolInstance tool.Tool) error {
 	if mysqlTool, ok := toolInstance.(*builtin.MySQLTool); ok {
-		if err := mysqlTool.Ping(nil); err != nil {
+		if err := mysqlTool.Ping(context.TODO()); err != nil {
 			logger.Errorf("❌ MySQL connection failed: %v", err)
 			return err
 		}
