@@ -153,9 +153,9 @@ func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agen
 
 			if len(mcpToolInfos) > 0 {
 				if err := toolRegistry.RegisterMCPTools(mcpToolInfos, mcpExecutor); err != nil {
-					logger.Get().Sugar().Warnw("Failed to register MCP tools", "error", err)
+					logger.Warnw("Failed to register MCP tools", "error", err)
 				} else {
-					logger.Get().Sugar().Infow("Successfully registered MCP tools to unified registry", "count", len(mcpToolInfos))
+					logger.Infow("Successfully registered MCP tools to unified registry", "count", len(mcpToolInfos))
 				}
 			}
 		}()

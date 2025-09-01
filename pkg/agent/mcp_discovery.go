@@ -3,8 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -201,129 +199,6 @@ func (s *MCPDiscoveryService) GetToolsByServer(serverName string) []*MCPToolInfo
 		return result
 	}
 	return nil
-}
-
-// SearchTools 根据查询搜索最匹配的工具
-func (s *MCPDiscoveryService) SearchTools(query string, maxResults int) []*MCPToolInfo {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if len(s.discoveredTools) == 0 {
-		return nil
-	}
-
-	type toolScore struct {
-		tool  *MCPToolInfo
-		score float64
-	}
-
-	scores := make([]toolScore, 0, len(s.discoveredTools))
-	queryLower := strings.ToLower(query)
-
-	for _, tool := range s.discoveredTools {
-		score := s.calculateToolScore(queryLower, tool)
-		if score > 0 {
-			scores = append(scores, toolScore{tool: tool, score: score})
-		}
-	}
-
-	// 按分数排序
-	sort.Slice(scores, func(i, j int) bool {
-		return scores[i].score > scores[j].score
-	})
-
-	// 返回前 maxResults 个结果
-	if maxResults > 0 && len(scores) > maxResults {
-		scores = scores[:maxResults]
-	}
-
-	result := make([]*MCPToolInfo, len(scores))
-	for i, s := range scores {
-		result[i] = s.tool
-	}
-
-	return result
-}
-
-// calculateToolScore 计算工具与查询的匹配分数
-func (s *MCPDiscoveryService) calculateToolScore(queryLower string, tool *MCPToolInfo) float64 {
-	score := 0.0
-
-	toolNameLower := strings.ToLower(tool.Name)
-	toolDescLower := strings.ToLower(tool.Description)
-
-	// 精确匹配工具名 - 最高分
-	if toolNameLower == queryLower {
-		score += 10.0
-	} else if strings.Contains(toolNameLower, queryLower) {
-		score += 5.0
-	}
-
-	// 描述中包含查询词
-	if strings.Contains(toolDescLower, queryLower) {
-		score += 3.0
-	}
-
-	// 查询词的各个部分匹配
-	queryWords := strings.Fields(queryLower)
-	for _, word := range queryWords {
-		if len(word) < 1 { // 降低最小长度要求
-			continue
-		}
-
-		if strings.Contains(toolNameLower, word) {
-			score += 2.0
-		}
-		if strings.Contains(toolDescLower, word) {
-			score += 1.0
-		}
-	}
-
-	// 特殊关键词映射 - 增强中文支持
-	keywordMappings := map[string][]string{
-		"股价":   {"stock", "price"},
-		"股票":   {"stock"},
-		"查询":   {"query", "search", "get"},
-		"苹果":   {"apple", "aapl", "america"}, // 苹果公司是美股，加权重到美股工具
-		"价格":   {"price"},
-		"排行":   {"ranking", "rank"},
-		"指数":   {"index"},
-		"期货":   {"futures"},
-		"外汇":   {"forex"},
-		"美股":   {"america", "american"},
-		"港股":   {"hongkong", "hong"},
-		"A股":   {"china", "chinese"},
-		"AAPL": {"america", "apple", "aapl"}, // AAPL 明确指向美股工具
-		"aapl": {"america", "apple", "aapl"},
-	}
-
-	// 检查关键词映射
-	for _, word := range queryWords {
-		if mappings, exists := keywordMappings[word]; exists {
-			for _, mapping := range mappings {
-				if strings.Contains(toolNameLower, mapping) {
-					score += 3.0
-				}
-				if strings.Contains(toolDescLower, mapping) {
-					score += 2.0
-				}
-			}
-		}
-	}
-
-	// 如果分数为0，给一个基础分数以便至少返回一些结果
-	if score == 0 {
-		// 检查是否有任何相关性
-		relevantWords := []string{"stock", "price", "query", "search", "get", "america", "china"}
-		for _, word := range relevantWords {
-			if strings.Contains(toolNameLower, word) || strings.Contains(toolDescLower, word) {
-				score += 0.5
-				break
-			}
-		}
-	}
-
-	return score
 }
 
 // GetTool 根据工具名获取工具信息
