@@ -36,9 +36,18 @@ func (s *FileStore) Save(trace *Trace) error {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// 使用时间戳作为文件名
-	filename := fmt.Sprintf("trace_%d.json", time.Now().Unix())
+	// 生成更友好的文件名，包含时间戳和简短的目标描述
+	timestamp := time.Now().Format("20060102_150405")
+	goalSummary := s.sanitizeFilename(trace.Goal)
+	if len(goalSummary) > 50 {
+		goalSummary = goalSummary[:50]
+	}
+
+	filename := fmt.Sprintf("trace_%s_%s.json", timestamp, goalSummary)
 	filepath := filepath.Join(s.basePath, filename)
+
+	// 更新轨迹的更新时间
+	trace.UpdatedAt = time.Now()
 
 	data, err := json.MarshalIndent(trace, "", "  ")
 	if err != nil {
@@ -50,6 +59,37 @@ func (s *FileStore) Save(trace *Trace) error {
 	}
 
 	return nil
+}
+
+// sanitizeFilename 清理文件名中的非法字符
+func (s *FileStore) sanitizeFilename(input string) string {
+	// 移除或替换非法字符
+	result := strings.ReplaceAll(input, " ", "_")
+	result = strings.ReplaceAll(result, "/", "_")
+	result = strings.ReplaceAll(result, "\\", "_")
+	result = strings.ReplaceAll(result, ":", "_")
+	result = strings.ReplaceAll(result, "*", "_")
+	result = strings.ReplaceAll(result, "?", "_")
+	result = strings.ReplaceAll(result, "\"", "_")
+	result = strings.ReplaceAll(result, "<", "_")
+	result = strings.ReplaceAll(result, ">", "_")
+	result = strings.ReplaceAll(result, "|", "_")
+	result = strings.ReplaceAll(result, "\n", "_")
+	result = strings.ReplaceAll(result, "\r", "_")
+
+	// 移除多余的下划线
+	for strings.Contains(result, "__") {
+		result = strings.ReplaceAll(result, "__", "_")
+	}
+
+	// 移除开头和结尾的下划线
+	result = strings.Trim(result, "_")
+
+	if result == "" {
+		result = "untitled"
+	}
+
+	return result
 }
 
 // Load 从文件加载轨迹

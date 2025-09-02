@@ -41,6 +41,7 @@ It supports:
 	rootCmd.AddCommand(commands.NewRunCommand())
 	rootCmd.AddCommand(commands.NewConfigCommand())
 	rootCmd.AddCommand(commands.NewToolsCommand())
+	rootCmd.AddCommand(commands.NewTraceCommand())
 
 	// 执行命令
 	if err := rootCmd.Execute(); err != nil {

@@ -1,0 +1,26 @@
+{
+  "goal": "计算 3+5 等于多少",
+  "steps": [
+    {
+      "index": 0,
+      "action": {
+        "name": "direct_answer",
+        "args": {
+          "answer": "3 + 5 = 8"
+        }
+      },
+      "timestamp": "2025-09-02T18:16:29.660177+08:00"
+    }
+  ],
+  "budget": {
+    "max_steps": 30,
+    "max_tokens": 8000,
+    "max_duration": 600000000000,
+    "used_steps": 1,
+    "used_tokens": 0,
+    "start_time": "2025-09-02T18:16:21.448466+08:00"
+  },
+  "status": "completed",
+  "created_at": "2025-09-02T18:16:21.448466+08:00",
+  "updated_at": "2025-09-02T18:16:29.66225+08:00"
+}

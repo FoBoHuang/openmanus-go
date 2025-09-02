@@ -289,6 +289,9 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 		UpdatedAt: time.Now(),
 	}
 
+	// 将轨迹保存到memory中
+	a.memory.SetCurrentTrace(trace)
+
 	var finalResult string
 
 	logger.Infof("🚀 [AGENT] Starting unified execution: %s", goal)
@@ -320,8 +323,7 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 		}
 
 		// 添加步骤到轨迹
-		step := trace.AddStep(action)
-		logger.Infof("✅ [STEP %d] Action: %s | Reason: %s | Index: %d", stepNum, action.Name, action.Reason, step.Index)
+		_ = trace.AddStep(action)
 
 		// 处理直接回答 - 简化处理，直接接受
 		if action.Name == "direct_answer" {

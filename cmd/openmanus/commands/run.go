@@ -12,6 +12,7 @@ import (
 	"openmanus-go/pkg/llm"
 	"openmanus-go/pkg/logger"
 	"openmanus-go/pkg/mcp/transport"
+	"openmanus-go/pkg/state"
 	"openmanus-go/pkg/tool"
 	"openmanus-go/pkg/tool/builtin"
 
@@ -42,6 +43,7 @@ Agent 将通过 Plan -> Tool Use -> Observation -> Reflection -> Next Action 的
 	cmd.Flags().IntP("max-tokens", "t", 0, "最大 token 数（0 表示使用配置默认值）")
 	cmd.Flags().StringP("temperature", "T", "", "LLM 温度（0.0-2.0）")
 	cmd.Flags().BoolP("save-trace", "S", true, "保存执行轨迹")
+	cmd.Flags().StringP("trace-path", "P", "", "轨迹保存路径（覆盖配置文件设置）")
 
 	return cmd
 }
@@ -173,8 +175,11 @@ func runSingleGoal(ctx context.Context, agent agent.Agent, goal string, cmd *cob
 	// 保存轨迹
 	saveTrace, _ := cmd.Flags().GetBool("save-trace")
 	if saveTrace {
-		// TODO: 实现轨迹保存功能
-		logger.Info("📝 Trace saving not implemented yet")
+		if err := saveTraceToStorage(agent, cmd); err != nil {
+			logger.Warnf("⚠️  [TRACE] Failed to save trace: %v", err)
+		} else {
+			logger.Info("📝 [TRACE] Execution trace saved successfully")
+		}
 	}
 
 	// 保存输出到文件
@@ -242,7 +247,12 @@ func runInteractiveMode(ctx context.Context, agent agent.Agent, cmd *cobra.Comma
 		logger.Infof("✅ Result:\n%s\n", result)
 
 		// 自动保存轨迹
-		// TODO: 实现轨迹自动保存
+		saveTrace, _ := cmd.Flags().GetBool("save-trace")
+		if saveTrace {
+			if err := saveTraceToStorage(agent, cmd); err != nil {
+				logger.Warnf("⚠️  [TRACE] Failed to save trace: %v", err)
+			}
+		}
 	}
 }
 
@@ -267,10 +277,43 @@ Agent Status:
 }
 
 func printTrace(agent agent.Agent) {
-	logger.Info(`
+	trace := agent.GetTrace()
+	if trace == nil {
+		logger.Info(`
 Current Trace:
   No trace information available yet
 `)
+		return
+	}
+
+	logger.Infof(`
+Current Trace:
+  Goal: %s
+  Status: %s
+  Steps: %d
+  Created: %s
+  Updated: %s
+`, trace.Goal, trace.Status, len(trace.Steps),
+		trace.CreatedAt.Format("2006-01-02 15:04:05"),
+		trace.UpdatedAt.Format("2006-01-02 15:04:05"))
+
+	if len(trace.Steps) > 0 {
+		logger.Info("  Recent Steps:")
+		// 显示最后3个步骤
+		start := len(trace.Steps) - 3
+		if start < 0 {
+			start = 0
+		}
+
+		for i := start; i < len(trace.Steps); i++ {
+			step := trace.Steps[i]
+			status := "✅"
+			if step.Observation != nil && step.Observation.ErrMsg != "" {
+				status = "❌"
+			}
+			logger.Infof("    %d. %s %s", i+1, status, step.Action.Name)
+		}
+	}
 }
 
 func printConfig() {
@@ -282,4 +325,44 @@ Configuration:
   
 Use 'openmanus config show' for detailed configuration.
 `)
+}
+
+// saveTraceToStorage 保存轨迹到存储
+func saveTraceToStorage(agent agent.Agent, cmd *cobra.Command) error {
+	// 获取配置路径
+	configPath, _ := cmd.Flags().GetString("config")
+
+	// 加载配置
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// 应用命令行参数覆盖
+	tracePath, _ := cmd.Flags().GetString("trace-path")
+	if tracePath != "" {
+		cfg.Storage.BasePath = tracePath
+		logger.Infof("📁 [TRACE] Using custom trace path: %s", tracePath)
+	}
+
+	// 创建存储实例
+	store, err := state.NewStore(&cfg.Storage)
+	if err != nil {
+		return fmt.Errorf("failed to create storage: %w", err)
+	}
+
+	// 获取轨迹
+	trace := agent.GetTrace()
+	if trace == nil {
+		return fmt.Errorf("no trace available to save")
+	}
+
+	// 保存轨迹
+	if err := store.Save(trace); err != nil {
+		return fmt.Errorf("failed to save trace: %w", err)
+	}
+
+	// 显示保存位置信息
+	logger.Infof("📂 [TRACE] Saved to: %s", cfg.Storage.BasePath)
+	return nil
 }

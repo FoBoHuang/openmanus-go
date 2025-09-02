@@ -240,7 +240,30 @@ Commands: /help, /status, /trace, /config
 
 # 禁用轨迹保存
 ./bin/openmanus run --interactive --save-trace=false
+
+# 自定义轨迹保存路径
+./bin/openmanus run "你的任务" --trace-path="./my-traces"
 ```
+
+### 📊 轨迹管理
+
+OpenManus-Go 提供完整的执行轨迹管理功能：
+
+```bash
+# 查看所有保存的轨迹
+./bin/openmanus trace list
+
+# 查看轨迹详细信息
+./bin/openmanus trace show <trace-id> --steps --observations
+
+# 清理旧轨迹
+./bin/openmanus trace clean --days 30
+
+# 删除指定轨迹
+./bin/openmanus trace delete <trace-id>
+```
+
+详细文档请参考：[轨迹管理指南](docs/TRACE_MANAGEMENT.md)
 
 ### 🛠️ 可用工具一览
 
