@@ -227,6 +227,21 @@ func (p *Planner) buildContextPrompt(goal string, trace *state.Trace) string {
 		}
 	}
 
+	// 添加最新反思信息
+	latestReflection := trace.GetLatestReflection()
+	if latestReflection != nil {
+		context.WriteString("🤖 LATEST REFLECTION:\n")
+		context.WriteString(fmt.Sprintf("- Reason: %s\n", latestReflection.Result.Reason))
+		if latestReflection.Result.RevisePlan {
+			context.WriteString("- ⚠️ Plan revision suggested\n")
+		}
+		if latestReflection.Result.NextActionHint != "" {
+			context.WriteString(fmt.Sprintf("- 💡 Next action hint: %s\n", latestReflection.Result.NextActionHint))
+		}
+		context.WriteString(fmt.Sprintf("- Confidence: %.2f\n", latestReflection.Result.Confidence))
+		context.WriteString("\n")
+	}
+
 	// 添加预算信息
 	context.WriteString(fmt.Sprintf("BUDGET: %d/%d steps used\n",
 		trace.Budget.UsedSteps, trace.Budget.MaxSteps))

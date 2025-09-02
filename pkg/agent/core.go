@@ -280,7 +280,8 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 		}
 
 		// 添加步骤到轨迹
-		_ = trace.AddStep(action)
+		step := trace.AddStep(action)
+		logger.Infof("✅ [STEP %d] Action: %s | Reason: %s | Index: %d", stepNum, action.Name, action.Reason, step.Index)
 
 		// 处理直接回答 - 简化处理，直接接受
 		if action.Name == "direct_answer" {
@@ -326,6 +327,38 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 				}
 			}
 			logger.Infof("✅ [RESULT] %s completed: %s", action.Name, outputPreview)
+		}
+
+		// 定期进行反思
+		if a.config.ReflectionSteps > 0 && len(trace.Steps)%a.config.ReflectionSteps == 0 {
+			logger.Infof("🤖 [REFLECT] Performing reflection after %d steps...", len(trace.Steps))
+			reflectionResult, err := a.Reflect(ctx, trace)
+			if err != nil {
+				logger.Warnf("⚠️  [REFLECT] Reflection failed: %v", err)
+			} else {
+				// 将反思结果保存到轨迹中
+				trace.AddReflection(reflectionResult)
+
+				logger.Infof("💭 [REFLECT] Result: %s (confidence: %.2f)", reflectionResult.Reason, reflectionResult.Confidence)
+
+				// 如果反思建议停止，则停止执行
+				if reflectionResult.ShouldStop {
+					finalResult = fmt.Sprintf("Execution stopped based on reflection: %s", reflectionResult.Reason)
+					trace.Status = state.TraceStatusCompleted
+					logger.Infof("🛑 [REFLECT] Stopping execution: %s", reflectionResult.Reason)
+					break
+				}
+
+				// 如果反思建议修改计划，记录提示信息
+				if reflectionResult.RevisePlan {
+					logger.Infof("📝 [REFLECT] Plan revision suggested: %s", reflectionResult.NextActionHint)
+				}
+
+				// 如果有下一步提示，记录下来
+				if reflectionResult.NextActionHint != "" {
+					logger.Infof("💡 [REFLECT] Next action hint: %s", reflectionResult.NextActionHint)
+				}
+			}
 		}
 
 		// 检查预算

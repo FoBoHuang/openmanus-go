@@ -31,13 +31,14 @@ type Step struct {
 
 // Trace 表示完整的执行轨迹
 type Trace struct {
-	Goal      string         `json:"goal"`
-	Steps     []Step         `json:"steps"`
-	Scratch   map[string]any `json:"scratch,omitempty"`
-	Budget    Budget         `json:"budget"`
-	Status    TraceStatus    `json:"status"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	Goal        string             `json:"goal"`
+	Steps       []Step             `json:"steps"`
+	Reflections []ReflectionRecord `json:"reflections,omitempty"` // 反思记录历史
+	Scratch     map[string]any     `json:"scratch,omitempty"`
+	Budget      Budget             `json:"budget"`
+	Status      TraceStatus        `json:"status"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
 }
 
 // Budget 表示执行预算限制
@@ -67,6 +68,13 @@ type ReflectionResult struct {
 	ShouldStop     bool    `json:"should_stop"`
 	Reason         string  `json:"reason"`
 	Confidence     float64 `json:"confidence,omitempty"`
+}
+
+// ReflectionRecord 表示反思记录
+type ReflectionRecord struct {
+	StepIndex int              `json:"step_index"` // 进行反思时的步骤索引
+	Result    ReflectionResult `json:"result"`     // 反思结果
+	Timestamp time.Time        `json:"timestamp"`  // 反思时间
 }
 
 // DecisionType 表示决策类型
@@ -112,6 +120,25 @@ func (t *Trace) UpdateObservation(obs *Observation) {
 		t.Steps[len(t.Steps)-1].Observation = obs
 		t.UpdatedAt = time.Now()
 	}
+}
+
+// AddReflection 添加反思记录
+func (t *Trace) AddReflection(result *ReflectionResult) {
+	reflection := ReflectionRecord{
+		StepIndex: len(t.Steps),
+		Result:    *result,
+		Timestamp: time.Now(),
+	}
+	t.Reflections = append(t.Reflections, reflection)
+	t.UpdatedAt = time.Now()
+}
+
+// GetLatestReflection 获取最新的反思记录
+func (t *Trace) GetLatestReflection() *ReflectionRecord {
+	if len(t.Reflections) == 0 {
+		return nil
+	}
+	return &t.Reflections[len(t.Reflections)-1]
 }
 
 // IsExceededBudget 检查是否超出预算限制
