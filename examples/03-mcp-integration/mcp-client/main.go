@@ -115,7 +115,12 @@ func createMCPAgent(cfg *config.Config) agent.Agent {
 	setupBuiltinTools(toolRegistry)
 
 	// 创建带 MCP 集成的 Agent
-	agentConfig := agent.DefaultConfig()
+	agentConfig, err := agent.ConfigFromAppConfig(cfg)
+	if err != nil {
+		panic(fmt.Sprintf("创建 Agent 配置失败: %v", err))
+	}
+
+	// 可以根据需要覆盖特定设置
 	agentConfig.MaxSteps = 10
 	agentConfig.MaxDuration = 5 * time.Minute
 

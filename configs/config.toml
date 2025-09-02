@@ -10,12 +10,12 @@ max_tokens = 4000
 timeout = 300  # 增加到 5 分钟，与 agent.max_duration 匹配
 
 [agent]
-max_steps = 10
-max_tokens = 8000
-max_duration = "5m"
-reflection_steps = 2
-max_retries = 2
-retry_backoff = "1s"
+max_steps = 30                             # 最大执行步数
+max_tokens = 8000                          # 最大令牌预算
+max_duration = "10m"                       # 最大执行时间
+reflection_steps = 5                       # 反思步数间隔
+max_retries = 2                            # 最大重试次数
+retry_backoff = "1s"                       # 重试间隔
 
 [runflow]
 use_data_analysis_agent = false

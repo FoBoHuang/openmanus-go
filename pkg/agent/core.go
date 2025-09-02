@@ -51,7 +51,6 @@ type Config struct {
 	MaxSteps        int           `json:"max_steps" mapstructure:"max_steps"`
 	MaxTokens       int           `json:"max_tokens" mapstructure:"max_tokens"`
 	MaxDuration     time.Duration `json:"max_duration" mapstructure:"max_duration"`
-	Temperature     float64       `json:"temperature" mapstructure:"temperature"`
 	ReflectionSteps int           `json:"reflection_steps" mapstructure:"reflection_steps"` // 每隔几步进行反思
 	MaxRetries      int           `json:"max_retries" mapstructure:"max_retries"`
 	RetryBackoff    time.Duration `json:"retry_backoff" mapstructure:"retry_backoff"`
@@ -63,11 +62,52 @@ func DefaultConfig() *Config {
 		MaxSteps:        30, // 增加到30步，类似OpenManus的策略
 		MaxTokens:       8000,
 		MaxDuration:     10 * time.Minute, // 增加执行时间限制
-		Temperature:     0.1,
 		ReflectionSteps: 3,
 		MaxRetries:      2,
 		RetryBackoff:    time.Second,
 	}
+}
+
+// ConfigFromAppConfig 从应用配置创建 Agent 配置
+func ConfigFromAppConfig(appConfig *config.Config) (*Config, error) {
+	if appConfig == nil {
+		return DefaultConfig(), nil
+	}
+
+	agentConfig := DefaultConfig()
+
+	// 转换基本字段
+	if appConfig.Agent.MaxSteps > 0 {
+		agentConfig.MaxSteps = appConfig.Agent.MaxSteps
+	}
+	if appConfig.Agent.MaxTokens > 0 {
+		agentConfig.MaxTokens = appConfig.Agent.MaxTokens
+	}
+	if appConfig.Agent.ReflectionSteps > 0 {
+		agentConfig.ReflectionSteps = appConfig.Agent.ReflectionSteps
+	}
+	if appConfig.Agent.MaxRetries > 0 {
+		agentConfig.MaxRetries = appConfig.Agent.MaxRetries
+	}
+
+	// 转换持续时间字段
+	if appConfig.Agent.MaxDuration != "" {
+		duration, err := time.ParseDuration(appConfig.Agent.MaxDuration)
+		if err != nil {
+			return nil, fmt.Errorf("invalid max_duration: %w", err)
+		}
+		agentConfig.MaxDuration = duration
+	}
+
+	if appConfig.Agent.RetryBackoff != "" {
+		backoff, err := time.ParseDuration(appConfig.Agent.RetryBackoff)
+		if err != nil {
+			return nil, fmt.Errorf("invalid retry_backoff: %w", err)
+		}
+		agentConfig.RetryBackoff = backoff
+	}
+
+	return agentConfig, nil
 }
 
 // NewBaseAgent 创建基础 Agent

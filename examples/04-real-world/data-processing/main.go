@@ -218,7 +218,14 @@ func createDataProcessingAgent(cfg *config.Config) agent.Agent {
 	setupDataProcessingTools(toolRegistry)
 
 	// 创建 Agent（针对数据处理任务优化）
-	agentConfig := agent.DefaultConfig()
+	agentConfig, err := agent.ConfigFromAppConfig(cfg)
+	if err != nil {
+		fmt.Printf("❌ 创建 Agent 配置失败: %v\n", err)
+		// 使用默认配置作为后备
+		agentConfig = agent.DefaultConfig()
+	}
+
+	// 针对数据处理任务优化配置
 	agentConfig.MaxSteps = 12 // 数据处理可能需要更多步骤
 	agentConfig.MaxDuration = 8 * time.Minute
 	agentConfig.ReflectionSteps = 4 // 更频繁的反思

@@ -108,7 +108,12 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	}
 
 	// 创建 Agent 配置
-	agentConfig := agent.DefaultConfig()
+	agentConfig, err := agent.ConfigFromAppConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create agent config: %w", err)
+	}
+
+	// 命令行参数覆盖配置文件设置
 	if maxSteps, _ := cmd.Flags().GetInt("max-steps"); maxSteps > 0 {
 		agentConfig.MaxSteps = maxSteps
 	}

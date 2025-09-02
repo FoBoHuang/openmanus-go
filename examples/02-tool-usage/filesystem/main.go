@@ -63,8 +63,12 @@ func main() {
 		fmt.Println(strings.Repeat("-", 30))
 
 		llmClient := llm.NewOpenAIClient(cfg.ToLLMConfig())
-		agentConfig := agent.DefaultConfig()
-		agentConfig.MaxSteps = 5
+		agentConfig, err := agent.ConfigFromAppConfig(cfg)
+		if err != nil {
+			fmt.Printf("❌ 创建 Agent 配置失败: %v\n", err)
+			return
+		}
+		agentConfig.MaxSteps = 5 // 覆盖为演示适用的步数
 
 		baseAgent := agent.NewBaseAgent(llmClient, toolRegistry, agentConfig)
 

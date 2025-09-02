@@ -79,7 +79,11 @@ func main() {
 
 	// 4. 创建 Agent
 	fmt.Println("\n🧠 创建 Agent...")
-	agentConfig := agent.DefaultConfig()
+	agentConfig, err := agent.ConfigFromAppConfig(cfg)
+	if err != nil {
+		fmt.Printf("❌ 创建 Agent 配置失败: %v\n", err)
+		return
+	}
 	agentConfig.MaxSteps = 5 // 限制步数，适合简单演示
 
 	baseAgent := agent.NewBaseAgent(llmClient, toolRegistry, agentConfig)

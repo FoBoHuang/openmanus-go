@@ -27,7 +27,7 @@ func main() {
 	cfg := setupConfig()
 	llmClient := llm.NewOpenAIClient(cfg.ToLLMConfig())
 	toolRegistry := setupTools()
-	agent := setupAgent(llmClient, toolRegistry)
+	agent := setupAgent(llmClient, toolRegistry, cfg)
 
 	hasAPIKey := cfg.LLM.APIKey != "" && cfg.LLM.APIKey != "your-api-key-here"
 
@@ -262,8 +262,15 @@ func setupTools() *tool.Registry {
 }
 
 // setupAgent 设置 Agent
-func setupAgent(llmClient llm.Client, toolRegistry *tool.Registry) agent.Agent {
-	agentConfig := agent.DefaultConfig()
+func setupAgent(llmClient llm.Client, toolRegistry *tool.Registry, cfg *config.Config) agent.Agent {
+	agentConfig, err := agent.ConfigFromAppConfig(cfg)
+	if err != nil {
+		fmt.Printf("❌ 创建 Agent 配置失败: %v\n", err)
+		// 使用默认配置作为后备
+		agentConfig = agent.DefaultConfig()
+	}
+
+	// 为基础任务演示调整配置
 	agentConfig.MaxSteps = 8 // 适合基础任务的步数
 	agentConfig.MaxDuration = 3 * time.Minute
 	agentConfig.ReflectionSteps = 3
