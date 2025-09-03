@@ -14,12 +14,14 @@ import (
 // Reflector 反思器
 type Reflector struct {
 	llmClient llm.Client
+	memory    *Memory // 添加内存引用
 }
 
 // NewReflector 创建反思器
-func NewReflector(llmClient llm.Client) *Reflector {
+func NewReflector(llmClient llm.Client, memory *Memory) *Reflector {
 	return &Reflector{
 		llmClient: llmClient,
+		memory:    memory,
 	}
 }
 
@@ -96,7 +98,7 @@ Consider:
 Be concise but thorough in your analysis.`
 }
 
-// buildReflectionPrompt 构建反思提示
+// buildReflectionPrompt 构建反思提示（增强版，使用 Memory 分析）
 func (r *Reflector) buildReflectionPrompt(trace *state.Trace) string {
 	var prompt strings.Builder
 
@@ -107,12 +109,45 @@ func (r *Reflector) buildReflectionPrompt(trace *state.Trace) string {
 	prompt.WriteString(fmt.Sprintf("- Total steps: %d/%d\n", len(trace.Steps), trace.Budget.MaxSteps))
 	prompt.WriteString(fmt.Sprintf("- Status: %s\n", trace.Status))
 
-	// 分析成功/失败率
-	successCount, _ := r.analyzeStepOutcomes(trace.Steps)
+	// 使用 Memory 获取更精确的分析
+	var successCount, failureCount int
+	if r.memory != nil {
+		r.memory.UpdateTraceMetrics() // 更新指标
+		successfulSteps := r.memory.GetSuccessfulSteps()
+		failedSteps := r.memory.GetFailedSteps()
+		successCount = len(successfulSteps)
+		failureCount = len(failedSteps)
+	} else {
+		// fallback 到原有逻辑
+		successCount, failureCount = r.analyzeStepOutcomes(trace.Steps)
+	}
+
 	totalSteps := len(trace.Steps)
 	if totalSteps > 0 {
 		successRate := float64(successCount) / float64(totalSteps) * 100
-		prompt.WriteString(fmt.Sprintf("- Success rate: %.1f%% (%d/%d)\n", successRate, successCount, totalSteps))
+		prompt.WriteString(fmt.Sprintf("- Success rate: %.1f%% (%d/%d successful, %d failed)\n", successRate, successCount, totalSteps, failureCount))
+	}
+
+	// 添加 Memory 提供的智能分析
+	if r.memory != nil {
+		memorySummary := r.memory.GetSummary()
+		if metrics, ok := memorySummary["metrics"].(map[string]any); ok {
+			if updatedAt, ok := metrics["updated_at"]; ok {
+				prompt.WriteString(fmt.Sprintf("- Last metrics update: %v\n", updatedAt))
+			}
+		}
+
+		// 添加历史压缩信息
+		if trace.Scratch != nil {
+			if compressedHistory, ok := trace.Scratch["compressed_history"].(map[string]any); ok {
+				if keyOutcomes, ok := compressedHistory["key_outcomes"].([]string); ok && len(keyOutcomes) > 0 {
+					prompt.WriteString("- Key outcomes from compressed history:\n")
+					for _, outcome := range keyOutcomes {
+						prompt.WriteString(fmt.Sprintf("  • %s\n", outcome))
+					}
+				}
+			}
+		}
 	}
 
 	prompt.WriteString("\n")

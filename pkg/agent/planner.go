@@ -16,13 +16,15 @@ import (
 type Planner struct {
 	llmClient    llm.Client
 	toolRegistry *tool.Registry
+	memory       *Memory // 添加内存引用
 }
 
 // NewPlanner 创建规划器
-func NewPlanner(llmClient llm.Client, toolRegistry *tool.Registry) *Planner {
+func NewPlanner(llmClient llm.Client, toolRegistry *tool.Registry, memory *Memory) *Planner {
 	return &Planner{
 		llmClient:    llmClient,
 		toolRegistry: toolRegistry,
+		memory:       memory,
 	}
 }
 
@@ -166,7 +168,7 @@ Always respond with either a tool call or a JSON decision in the format:
 {"type": "DECISION_TYPE", "content": "response", "reason": "explanation"}`
 }
 
-// buildContextPrompt 构建上下文提示
+// buildContextPrompt 构建上下文提示（增强版，使用 Memory 分析）
 func (p *Planner) buildContextPrompt(goal string, trace *state.Trace) string {
 	var context strings.Builder
 
@@ -178,10 +180,56 @@ func (p *Planner) buildContextPrompt(goal string, trace *state.Trace) string {
 
 	if len(trace.Steps) == 0 {
 		context.WriteString("CONTEXT: This is the first step. No previous actions have been taken.\n")
+
+		// 检查长期记忆中是否有相关经验
+		if p.memory != nil {
+			if similarGoalContext, exists := p.memory.GetContextualInfo("similar_goal_patterns"); exists {
+				context.WriteString(fmt.Sprintf("💡 EXPERIENCE: Previous experience with similar goals: %v\n", similarGoalContext))
+			}
+		}
 	} else {
-		context.WriteString("PREVIOUS STEPS:\n")
-		for i, step := range trace.Steps {
-			context.WriteString(fmt.Sprintf("Step %d: %s", i+1, step.Action.Name))
+		// 使用 Memory 的智能分析功能
+		if p.memory != nil {
+			// 获取失败的步骤分析
+			failedSteps := p.memory.GetFailedSteps()
+			successfulSteps := p.memory.GetSuccessfulSteps()
+
+			if len(failedSteps) > 0 {
+				context.WriteString("⚠️  FAILURE ANALYSIS:\n")
+				failurePatterns := p.analyzeFailurePatterns(failedSteps)
+				for _, pattern := range failurePatterns {
+					context.WriteString(fmt.Sprintf("- %s\n", pattern))
+				}
+				context.WriteString("\n")
+			}
+
+			if len(successfulSteps) > 0 {
+				context.WriteString("✅ SUCCESS PATTERNS:\n")
+				successPatterns := p.analyzeSuccessPatterns(successfulSteps)
+				for _, pattern := range successPatterns {
+					context.WriteString(fmt.Sprintf("- %s\n", pattern))
+				}
+				context.WriteString("\n")
+			}
+		}
+
+		// 显示最近的步骤（使用 Memory 的智能方法）
+		var recentSteps []state.Step
+		if p.memory != nil {
+			recentSteps = p.memory.GetRecentSteps(5) // 获取最近5步
+		} else {
+			// fallback 到原有逻辑
+			if len(trace.Steps) <= 5 {
+				recentSteps = trace.Steps
+			} else {
+				recentSteps = trace.Steps[len(trace.Steps)-5:]
+			}
+		}
+
+		context.WriteString("RECENT STEPS:\n")
+		for i, step := range recentSteps {
+			stepNum := len(trace.Steps) - len(recentSteps) + i + 1
+			context.WriteString(fmt.Sprintf("Step %d: %s", stepNum, step.Action.Name))
 			if step.Action.Reason != "" {
 				context.WriteString(fmt.Sprintf(" (%s)", step.Action.Reason))
 			}
@@ -408,4 +456,68 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// analyzeFailurePatterns 分析失败模式
+func (p *Planner) analyzeFailurePatterns(failedSteps []state.Step) []string {
+	if len(failedSteps) == 0 {
+		return nil
+	}
+
+	patterns := make([]string, 0)
+	actionFailures := make(map[string][]string)
+
+	// 按动作类型分组失败原因
+	for _, step := range failedSteps {
+		if step.Observation != nil && step.Observation.ErrMsg != "" {
+			actionFailures[step.Action.Name] = append(actionFailures[step.Action.Name], step.Observation.ErrMsg)
+		}
+	}
+
+	// 分析每种动作的失败模式
+	for action, errors := range actionFailures {
+		if len(errors) > 1 {
+			patterns = append(patterns, fmt.Sprintf("Tool '%s' has failed %d times - consider alternative approach", action, len(errors)))
+		} else {
+			patterns = append(patterns, fmt.Sprintf("Tool '%s' failed: %s", action, errors[0]))
+		}
+	}
+
+	// 存储失败模式到长期记忆
+	if p.memory != nil {
+		p.memory.SetLongTerm("failure_patterns", actionFailures)
+	}
+
+	return patterns
+}
+
+// analyzeSuccessPatterns 分析成功模式
+func (p *Planner) analyzeSuccessPatterns(successfulSteps []state.Step) []string {
+	if len(successfulSteps) == 0 {
+		return nil
+	}
+
+	patterns := make([]string, 0)
+	actionSuccesses := make(map[string]int)
+
+	// 统计成功的动作
+	for _, step := range successfulSteps {
+		actionSuccesses[step.Action.Name]++
+	}
+
+	// 分析成功模式
+	for action, count := range actionSuccesses {
+		if count > 1 {
+			patterns = append(patterns, fmt.Sprintf("Tool '%s' has succeeded %d times - reliable option", action, count))
+		} else {
+			patterns = append(patterns, fmt.Sprintf("Tool '%s' succeeded recently", action))
+		}
+	}
+
+	// 存储成功模式到长期记忆
+	if p.memory != nil {
+		p.memory.SetLongTerm("success_patterns", actionSuccesses)
+	}
+
+	return patterns
 }

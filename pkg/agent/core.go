@@ -121,9 +121,9 @@ func NewBaseAgent(llmClient llm.Client, toolRegistry *tool.Registry, config *Con
 	}
 
 	toolExecutor := tool.NewExecutor(toolRegistry, 30*time.Second)
-	planner := NewPlanner(llmClient, toolRegistry)
 	memory := NewMemory()
-	reflector := NewReflector(llmClient)
+	planner := NewPlanner(llmClient, toolRegistry, memory)
+	reflector := NewReflector(llmClient, memory)
 
 	return &BaseAgent{
 		llmClient:    llmClient,
@@ -147,7 +147,7 @@ func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agen
 
 	// 创建基础组件
 	memory := NewMemory()
-	reflector := NewReflector(llmClient)
+	reflector := NewReflector(llmClient, memory)
 
 	// 如果有 MCP 配置，将 MCP 工具集成到统一注册表中
 	var mcpExecutor *MCPExecutor
@@ -208,7 +208,7 @@ func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agen
 
 	// 创建统一的工具执行器和规划器
 	toolExecutor := tool.NewExecutor(toolRegistry, 30*time.Second)
-	planner := NewPlanner(llmClient, toolRegistry) // 使用统一的规划器，不需要特殊的MCP逻辑
+	planner := NewPlanner(llmClient, toolRegistry, memory) // 使用统一的规划器，传入 Memory
 
 	return &BaseAgent{
 		llmClient:    llmClient,
@@ -358,9 +358,11 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 		// 更新观测结果
 		trace.UpdateObservation(observation)
 
-		// 记录执行结果
+		// 记录执行结果并学习
 		if observation.ErrMsg != "" {
 			logger.Warnf("❌ [RESULT] %s failed: %s", action.Name, observation.ErrMsg)
+			// 学习失败模式，避免重复犯错
+			a.memory.AddContextualInfo(fmt.Sprintf("failed_%s_reasons", action.Name), observation.ErrMsg)
 		} else {
 			outputPreview := ""
 			if observation.Output != nil {
@@ -369,7 +371,15 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 				}
 			}
 			logger.Infof("✅ [RESULT] %s completed: %s", action.Name, outputPreview)
+			// 学习成功模式
+			a.memory.AddContextualInfo(fmt.Sprintf("successful_%s_pattern", action.Name), map[string]any{
+				"args":   action.Args,
+				"output": observation.Output,
+			})
 		}
+
+		// 更新记忆中的轨迹指标
+		a.memory.UpdateTraceMetrics()
 
 		// 定期进行反思
 		if a.config.ReflectionSteps > 0 && len(trace.Steps)%a.config.ReflectionSteps == 0 {
@@ -401,6 +411,12 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 					logger.Infof("💡 [REFLECT] Next action hint: %s", reflectionResult.NextActionHint)
 				}
 			}
+		}
+
+		// 定期压缩轨迹以节省内存
+		if len(trace.Steps) > 20 && len(trace.Steps)%10 == 0 {
+			logger.Infof("🗜️  [MEMORY] Compressing trace to maintain efficiency...")
+			a.memory.CompressTrace(15) // 保留最近15步
 		}
 
 		// 检查预算

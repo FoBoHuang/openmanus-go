@@ -6,8 +6,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Store 定义状态存储接口
@@ -39,9 +41,7 @@ func (s *FileStore) Save(trace *Trace) error {
 	// 生成更友好的文件名，包含时间戳和简短的目标描述
 	timestamp := time.Now().Format("20060102_150405")
 	goalSummary := s.sanitizeFilename(trace.Goal)
-	if len(goalSummary) > 50 {
-		goalSummary = goalSummary[:50]
-	}
+	// sanitizeFilename 已经处理了长度限制，这里不需要再截断
 
 	filename := fmt.Sprintf("trace_%s_%s.json", timestamp, goalSummary)
 	filepath := filepath.Join(s.basePath, filename)
@@ -61,35 +61,60 @@ func (s *FileStore) Save(trace *Trace) error {
 	return nil
 }
 
-// sanitizeFilename 清理文件名中的非法字符
+// sanitizeFilename 清理文件名中的非法字符（支持中文）
 func (s *FileStore) sanitizeFilename(input string) string {
-	// 移除或替换非法字符
-	result := strings.ReplaceAll(input, " ", "_")
-	result = strings.ReplaceAll(result, "/", "_")
-	result = strings.ReplaceAll(result, "\\", "_")
-	result = strings.ReplaceAll(result, ":", "_")
-	result = strings.ReplaceAll(result, "*", "_")
-	result = strings.ReplaceAll(result, "?", "_")
-	result = strings.ReplaceAll(result, "\"", "_")
-	result = strings.ReplaceAll(result, "<", "_")
-	result = strings.ReplaceAll(result, ">", "_")
-	result = strings.ReplaceAll(result, "|", "_")
-	result = strings.ReplaceAll(result, "\n", "_")
-	result = strings.ReplaceAll(result, "\r", "_")
+	// 首先处理空字符串
+	if strings.TrimSpace(input) == "" {
+		return "untitled"
+	}
+
+	// 将字符串转换为安全的文件名格式
+	var result strings.Builder
+
+	// 遍历每个字符
+	for _, r := range input {
+		switch {
+		// 允许中文字符、字母、数字
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			result.WriteRune(r)
+		// 将空格和其他分隔符转换为下划线
+		case unicode.IsSpace(r):
+			result.WriteString("_")
+		// 跳过文件系统非法字符
+		case r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' ||
+			r == '"' || r == '<' || r == '>' || r == '|' || r == '\n' || r == '\r':
+			result.WriteString("_")
+		// 允许一些安全的标点符号
+		case r == '-' || r == '_' || r == '.' || r == '(' || r == ')' ||
+			r == '[' || r == ']' || r == '，' || r == '。' || r == '！' || r == '？':
+			result.WriteRune(r)
+		// 其他字符转换为下划线
+		default:
+			result.WriteString("_")
+		}
+	}
+
+	resultStr := result.String()
 
 	// 移除多余的下划线
-	for strings.Contains(result, "__") {
-		result = strings.ReplaceAll(result, "__", "_")
-	}
+	re := regexp.MustCompile(`_+`)
+	resultStr = re.ReplaceAllString(resultStr, "_")
 
 	// 移除开头和结尾的下划线
-	result = strings.Trim(result, "_")
+	resultStr = strings.Trim(resultStr, "_")
 
-	if result == "" {
-		result = "untitled"
+	// 如果结果为空，使用默认名称
+	if resultStr == "" {
+		resultStr = "untitled"
 	}
 
-	return result
+	// 限制长度，但要注意中文字符
+	if len([]rune(resultStr)) > 50 {
+		runes := []rune(resultStr)
+		resultStr = string(runes[:50])
+	}
+
+	return resultStr
 }
 
 // Load 从文件加载轨迹
