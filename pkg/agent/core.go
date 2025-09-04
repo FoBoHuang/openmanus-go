@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -309,17 +308,39 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 
 		stepNum := len(trace.Steps) + 1
 		logger.Infof("")
+		logger.Infof("═══════════════════════════════════════════════════════════════")
 		logger.Infof("🤔 [STEP %d/%d] Planning next action...", stepNum, a.config.MaxSteps)
 		logger.Infof("⏱️  [PROGRESS] %.1f%% complete | Elapsed: %v",
 			float64(stepNum-1)/float64(a.config.MaxSteps)*100,
 			time.Since(trace.Budget.StartTime).Round(time.Second))
 
-		// 规划下一步动作
+		// 打印当前状态和目标
+		logger.Infof("🎯 [CURRENT_GOAL] %s", goal)
+		if len(trace.Steps) > 0 {
+			lastStep := trace.Steps[len(trace.Steps)-1]
+			if lastStep.Observation != nil {
+				if lastStep.Observation.ErrMsg != "" {
+					logger.Infof("📋 [LAST_RESULT] ❌ Failed: %s", lastStep.Observation.ErrMsg)
+				} else {
+					logger.Infof("📋 [LAST_RESULT] ✅ Success: %s", a.summarizeObservation(lastStep.Observation))
+				}
+			}
+		}
+
+		logger.Infof("🤔 [PLANNING] Starting reasoning process...")
+
+		// 1. Plan: 规划下一步动作
 		action, err := a.Plan(ctx, goal, trace)
 		if err != nil {
 			trace.Status = state.TraceStatusFailed
 			logger.Errorf("❌ [PLAN] Planning failed: %v", err)
 			return "", fmt.Errorf("planning failed: %w", err)
+		}
+
+		// 打印规划结果
+		logger.Infof("✅ [PLAN_COMPLETE] Decision made: %s", action.Name)
+		if action.Reason != "" {
+			logger.Infof("💭 [PLAN_REASON] %s", action.Reason)
 		}
 
 		// 添加步骤到轨迹
@@ -330,7 +351,8 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 			potentialResult := getStringFromArgs(action.Args, "answer")
 			finalResult = potentialResult
 			trace.Status = state.TraceStatusCompleted
-			logger.Infof("✅ [ANSWER] Task completed with direct answer")
+			logger.Infof("✅ [DIRECT_ANSWER] Task completed with direct answer:")
+			logger.Infof("📝 [ANSWER_CONTENT] %s", potentialResult)
 			break
 		}
 
@@ -338,12 +360,23 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 		if action.Name == "stop" {
 			finalResult = getStringFromArgs(action.Args, "reason")
 			trace.Status = state.TraceStatusCompleted
-			logger.Infof("🛑 [STOP] %s", finalResult)
+			logger.Infof("🛑 [STOP_EXECUTION] Stopping execution")
+			logger.Infof("📝 [STOP_REASON] %s", finalResult)
 			break
 		}
 
-		// 执行工具调用
-		logger.Infof("⚡ [EXEC] Executing %s...", action.Name)
+		// 执行工具调用 - 详细信息
+		logger.Infof("⚡ [EXECUTION_START] Preparing to execute: %s", action.Name)
+		logger.Infof("🔧 [TOOL_PARAMS] Parameters:")
+		for key, value := range action.Args {
+			if valueStr := fmt.Sprintf("%v", value); len(valueStr) > 100 {
+				logger.Infof("    %s: <%s, %d chars>", key, a.getValueType(value), len(valueStr))
+			} else {
+				logger.Infof("    %s: %v", key, value)
+			}
+		}
+		logger.Infof("⚡ [EXECUTING] Running %s now...", action.Name)
+		// 2. Act: 执行动作
 		observation, err := a.Act(ctx, action)
 
 		if err != nil {
@@ -352,25 +385,40 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 				Tool:   action.Name,
 				ErrMsg: err.Error(),
 			}
-			logger.Warnf("⚠️  [ERROR] Tool execution failed: %v", err)
+			logger.Warnf("⚠️  [EXECUTION_ERROR] Tool execution failed: %v", err)
 		}
 
 		// 更新观测结果
 		trace.UpdateObservation(observation)
 
-		// 记录执行结果并学习
+		// 详细记录执行结果并学习
+		logger.Infof("📊 [EXECUTION_COMPLETE] Tool execution finished: %s", action.Name)
+		logger.Infof("⏱️  [EXECUTION_TIME] Latency: %d ms", observation.Latency)
+
 		if observation.ErrMsg != "" {
-			logger.Warnf("❌ [RESULT] %s failed: %s", action.Name, observation.ErrMsg)
+			logger.Warnf("❌ [EXECUTION_FAILED] %s failed with error:", action.Name)
+			logger.Warnf("📝 [ERROR_DETAILS] %s", observation.ErrMsg)
+			logger.Warnf("🤖 [LEARNING] Recording failure pattern for future reference")
 			// 学习失败模式，避免重复犯错
 			a.memory.AddContextualInfo(fmt.Sprintf("failed_%s_reasons", action.Name), observation.ErrMsg)
 		} else {
-			outputPreview := ""
+			logger.Infof("✅ [EXECUTION_SUCCESS] %s completed successfully", action.Name)
+			logger.Infof("📊 [OUTPUT_ANALYSIS] Processing execution results...")
+
 			if observation.Output != nil {
-				if outputBytes, err := json.Marshal(observation.Output); err == nil {
-					outputPreview = truncateString(string(outputBytes), 150)
+				logger.Infof("📝 [OUTPUT_DETAILS] Result data:")
+				for key, value := range observation.Output {
+					if valueStr := fmt.Sprintf("%v", value); len(valueStr) > 100 {
+						logger.Infof("    %s: <%s, %d chars>", key, a.getValueType(value), len(valueStr))
+					} else {
+						logger.Infof("    %s: %v", key, value)
+					}
 				}
+			} else {
+				logger.Infof("📝 [OUTPUT_DETAILS] No output data returned")
 			}
-			logger.Infof("✅ [RESULT] %s completed: %s", action.Name, outputPreview)
+
+			logger.Infof("🤖 [LEARNING] Recording success pattern for future reference")
 			// 学习成功模式
 			a.memory.AddContextualInfo(fmt.Sprintf("successful_%s_pattern", action.Name), map[string]any{
 				"args":   action.Args,
@@ -383,33 +431,43 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 
 		// 定期进行反思
 		if a.config.ReflectionSteps > 0 && len(trace.Steps)%a.config.ReflectionSteps == 0 {
-			logger.Infof("🤖 [REFLECT] Performing reflection after %d steps...", len(trace.Steps))
+			logger.Infof("")
+			logger.Infof("🤖 [REFLECTION_START] Performing reflection after %d steps...", len(trace.Steps))
+			logger.Infof("🔍 [ANALYZING] Analyzing execution patterns and progress...")
+
+			// 3. Reflect: 定期反思（每N步）
 			reflectionResult, err := a.Reflect(ctx, trace)
 			if err != nil {
-				logger.Warnf("⚠️  [REFLECT] Reflection failed: %v", err)
+				logger.Warnf("⚠️  [REFLECTION_ERROR] Reflection failed: %v", err)
 			} else {
 				// 将反思结果保存到轨迹中
 				trace.AddReflection(reflectionResult)
 
-				logger.Infof("💭 [REFLECT] Result: %s (confidence: %.2f)", reflectionResult.Reason, reflectionResult.Confidence)
+				logger.Infof("🧠 [REFLECTION_COMPLETE] Analysis finished")
+				logger.Infof("💭 [REFLECTION_REASON] %s", reflectionResult.Reason)
+				logger.Infof("📊 [CONFIDENCE] %.2f", reflectionResult.Confidence)
 
 				// 如果反思建议停止，则停止执行
 				if reflectionResult.ShouldStop {
 					finalResult = fmt.Sprintf("Execution stopped based on reflection: %s", reflectionResult.Reason)
 					trace.Status = state.TraceStatusCompleted
-					logger.Infof("🛑 [REFLECT] Stopping execution: %s", reflectionResult.Reason)
+					logger.Infof("🛑 [REFLECTION_STOP] Stopping execution based on reflection")
+					logger.Infof("📝 [STOP_REASON] %s", reflectionResult.Reason)
 					break
 				}
 
 				// 如果反思建议修改计划，记录提示信息
 				if reflectionResult.RevisePlan {
-					logger.Infof("📝 [REFLECT] Plan revision suggested: %s", reflectionResult.NextActionHint)
+					logger.Infof("🔄 [PLAN_REVISION] Plan revision suggested")
+					logger.Infof("💡 [REVISION_HINT] %s", reflectionResult.NextActionHint)
 				}
 
 				// 如果有下一步提示，记录下来
-				if reflectionResult.NextActionHint != "" {
-					logger.Infof("💡 [REFLECT] Next action hint: %s", reflectionResult.NextActionHint)
+				if reflectionResult.NextActionHint != "" && !reflectionResult.RevisePlan {
+					logger.Infof("💡 [NEXT_ACTION_HINT] %s", reflectionResult.NextActionHint)
 				}
+
+				logger.Infof("🤖 [REFLECTION_END] Continuing with execution...")
 			}
 		}
 
@@ -511,4 +569,53 @@ func (a *BaseAgent) SaveTrace(trace *state.Trace, store state.Store) error {
 // LoadTrace 加载轨迹
 func (a *BaseAgent) LoadTrace(id string, store state.Store) (*state.Trace, error) {
 	return store.Load(id)
+}
+
+// summarizeObservation 总结观测结果
+func (a *BaseAgent) summarizeObservation(obs *state.Observation) string {
+	if obs.Output == nil {
+		return "No output"
+	}
+
+	// 尝试提取关键信息
+	if result, ok := obs.Output["result"].(string); ok {
+		if len(result) > 100 {
+			return result[:100] + "..."
+		}
+		return result
+	}
+
+	if success, ok := obs.Output["success"].(bool); ok {
+		if success {
+			return "Operation completed successfully"
+		} else {
+			if errMsg, ok := obs.Output["error"].(string); ok {
+				return fmt.Sprintf("Operation failed: %s", errMsg)
+			}
+			return "Operation failed"
+		}
+	}
+
+	// 默认总结
+	return "Operation completed"
+}
+
+// getValueType 获取值的类型描述
+func (a *BaseAgent) getValueType(value any) string {
+	switch value.(type) {
+	case string:
+		return "string"
+	case int, int32, int64:
+		return "integer"
+	case float32, float64:
+		return "number"
+	case bool:
+		return "boolean"
+	case []any:
+		return "array"
+	case map[string]any:
+		return "object"
+	default:
+		return "unknown"
+	}
 }

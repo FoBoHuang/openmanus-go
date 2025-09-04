@@ -63,6 +63,12 @@ func (p *Planner) standardPlan(ctx context.Context, goal string, trace *state.Tr
 		Temperature: 0.1,
 	}
 
+	// 打印完整的思考过程提示
+	logger.Infof("🧠 [THINKING] Sending planning request to LLM...")
+	logger.Infof("📋 [CONTEXT] System prompt length: %d chars", len(systemPrompt))
+	logger.Infof("📋 [CONTEXT] Context prompt length: %d chars", len(contextPrompt))
+	logger.Infof("🔧 [TOOLS] Available tools: %d", len(tools))
+
 	// 发送请求
 	resp, err := p.llmClient.Chat(ctx, req)
 	if err != nil {
@@ -75,9 +81,15 @@ func (p *Planner) standardPlan(ctx context.Context, goal string, trace *state.Tr
 
 	choice := resp.Choices[0]
 
+	// 打印LLM的完整思考内容
+	logger.Infof("🧠 [LLM_THINKING] ═══════════════════════════════════════")
+	if choice.Message.Content != "" {
+		logger.Infof("💭 [LLM_REASONING] %s", choice.Message.Content)
+	}
+
 	// 详细的LLM响应日志
 	if len(choice.Message.ToolCalls) > 0 {
-		logger.Infof("🛠️  [LLM] LLM decided to use a tool")
+		logger.Infof("🛠️  [LLM_DECISION] LLM decided to use a tool")
 		toolCall := choice.Message.ToolCalls[0]
 
 		// 获取工具信息以判断类型
@@ -89,9 +101,14 @@ func (p *Planner) standardPlan(ctx context.Context, goal string, trace *state.Tr
 			toolTypeText = "MCP"
 		}
 
-		logger.Infof("🎯 [TOOL] Selected: %s %s (%s tool)", toolTypeSymbol, toolCall.Function.Name, toolTypeText)
+		logger.Infof("🎯 [TOOL_SELECTED] %s %s (%s tool)", toolTypeSymbol, toolCall.Function.Name, toolTypeText)
 		if toolInfo != nil && toolInfo.ServerName != "" {
-			logger.Infof("📡 [SERVER] From MCP server: %s", toolInfo.ServerName)
+			logger.Infof("📡 [MCP_SERVER] From MCP server: %s", toolInfo.ServerName)
+		}
+
+		// 显示工具描述
+		if toolInfo != nil {
+			logger.Infof("📝 [TOOL_DESC] %s", toolInfo.Description)
 		}
 
 		args, err := llm.ParseToolCallArguments(toolCall.Function.Arguments)
@@ -99,22 +116,29 @@ func (p *Planner) standardPlan(ctx context.Context, goal string, trace *state.Tr
 			return state.Action{}, fmt.Errorf("failed to parse tool arguments: %w", err)
 		}
 
-		// 显示工具参数（如果不太长的话）
-		if argsStr := fmt.Sprintf("%v", args); len(argsStr) < 200 {
-			logger.Infof("⚙️  [ARGS] Tool arguments: %v", args)
-		} else {
-			logger.Infof("⚙️  [ARGS] Tool arguments: <long arguments, %d chars>", len(argsStr))
+		// 详细显示工具参数和计划
+		logger.Infof("⚙️  [TOOL_ARGS] Tool arguments:")
+		for key, value := range args {
+			if valueStr := fmt.Sprintf("%v", value); len(valueStr) > 100 {
+				logger.Infof("    %s: <%s, %d chars>", key, getValueType(value), len(valueStr))
+			} else {
+				logger.Infof("    %s: %v", key, value)
+			}
 		}
+
+		logger.Infof("🎯 [ACTION_PLAN] Will execute: %s with %d parameters", toolCall.Function.Name, len(args))
+		logger.Infof("🧠 [LLM_THINKING] ═══════════════════════════════════════")
 
 		return state.Action{
 			Name: toolCall.Function.Name,
 			Args: args,
 		}, nil
 	} else {
-		logger.Infof("💭 [LLM] LLM decided not to use any tools")
+		logger.Infof("💭 [LLM_DECISION] LLM decided not to use any tools")
 		if choice.Message.Content != "" {
-			logger.Infof("📝 [RESPONSE] LLM response: %s", truncateString(choice.Message.Content, 150))
+			logger.Infof("📝 [LLM_RESPONSE] LLM response: %s", truncateString(choice.Message.Content, 150))
 		}
+		logger.Infof("🧠 [LLM_THINKING] ═══════════════════════════════════════")
 	}
 
 	// 处理直接回答
@@ -419,6 +443,26 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// getValueType 获取值的类型描述
+func getValueType(value any) string {
+	switch value.(type) {
+	case string:
+		return "string"
+	case int, int32, int64:
+		return "integer"
+	case float32, float64:
+		return "number"
+	case bool:
+		return "boolean"
+	case []any:
+		return "array"
+	case map[string]any:
+		return "object"
+	default:
+		return "unknown"
+	}
 }
 
 // analyzeFailurePatterns 分析失败模式
