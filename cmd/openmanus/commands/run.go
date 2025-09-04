@@ -42,7 +42,7 @@ Agent 将通过 Plan -> Tool Use -> Observation -> Reflection -> Next Action 的
 	cmd.Flags().IntP("max-steps", "s", 0, "最大步数（0 表示使用配置默认值）")
 	cmd.Flags().IntP("max-tokens", "t", 0, "最大 token 数（0 表示使用配置默认值）")
 	cmd.Flags().StringP("temperature", "T", "", "LLM 温度（0.0-2.0）")
-	cmd.Flags().BoolP("save-trace", "S", true, "保存执行轨迹")
+	cmd.Flags().BoolP("save-trace", "S", false, "保存执行轨迹")
 	cmd.Flags().StringP("trace-path", "P", "", "轨迹保存路径（覆盖配置文件设置）")
 
 	return cmd
