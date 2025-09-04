@@ -317,9 +317,9 @@ func (p *Planner) buildToolsPrompt() string {
 // buildLLMTools 构建 LLM 工具定义
 func (p *Planner) buildLLMTools() []llm.Tool {
 	toolsManifest := p.toolRegistry.GetToolsManifest()
-	llmTools := make([]llm.Tool, 0, len(toolsManifest)+2)
+	llmTools := make([]llm.Tool, 0, len(toolsManifest))
 
-	// 添加注册的工具
+	// 添加所有注册的工具（包括 direct_answer 和 stop）
 	for _, toolInfo := range toolsManifest {
 		llmTools = append(llmTools, llm.CreateToolFromToolInfo(
 			toolInfo.Name,
@@ -327,43 +327,6 @@ func (p *Planner) buildLLMTools() []llm.Tool {
 			toolInfo.InputSchema,
 		))
 	}
-
-	// 添加特殊工具
-	llmTools = append(llmTools, llm.Tool{
-		Type: "function",
-		Function: llm.ToolFunction{
-			Name:        "direct_answer",
-			Description: "Provide a direct answer to the user's question",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"answer": map[string]any{
-						"type":        "string",
-						"description": "The direct answer to provide to the user",
-					},
-				},
-				"required": []string{"answer"},
-			},
-		},
-	})
-
-	llmTools = append(llmTools, llm.Tool{
-		Type: "function",
-		Function: llm.ToolFunction{
-			Name:        "stop",
-			Description: "Stop execution with a reason",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"reason": map[string]any{
-						"type":        "string",
-						"description": "The reason for stopping",
-					},
-				},
-				"required": []string{"reason"},
-			},
-		},
-	})
 
 	return llmTools
 }
