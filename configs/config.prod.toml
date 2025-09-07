@@ -2,66 +2,94 @@
 # 生产环境配置
 
 [llm]
-model = "deepseek-chat"
-base_url = "https://api.deepseek.com/v1"
-api_key = "your-api-key-here"  # 🔑 REQUIRED: Set your OpenAI API key
-temperature = 0.1
-max_tokens = 4000
-timeout = 300
+model = "deepseek-chat"                    # 生产推荐稳定模型
+base_url = "https://api.deepseek.com/v1"   # 或使用环境变量: "${OPENMANUS_LLM_BASE_URL}"
+api_key = "${OPENMANUS_LLM_API_KEY}"       # 🔑 使用环境变量
+temperature = 0.1                          # 保持较低温度确保稳定性
+max_tokens = 4000                          # 适中的令牌数
+timeout = 120                              # 生产环境更长超时
 
 [agent]
-max_steps = 30                             # 最大执行步数
-max_tokens = 8000                          # 最大令牌预算
-max_duration = "10m"                       # 最大执行时间
-reflection_steps = 3                       # 反思步数间隔
-max_retries = 2                            # 最大重试次数
-retry_backoff = "1s"                       # 重试间隔
+max_steps = 25                             # 生产环境适度增加步数
+max_tokens = 15000                         # 更大的令牌预算
+max_duration = "15m"                       # 更长的执行时间
+reflection_steps = 5                       # 更频繁的反思
+max_retries = 2                            # 减少重试避免资源浪费
+retry_backoff = "3s"                       # 更长的重试间隔
 
 [runflow]
-use_data_analysis_agent = false
-enable_multi_agent = false
+use_data_analysis_agent = true             # 生产环境启用数据分析
+enable_multi_agent = true                  # 启用多智能体协作
 
 [server]
-host = "localhost"
+host = "0.0.0.0"                          # 容器部署必须绑定所有接口
 port = 8080
 
 [storage]
-type = "file"
-base_path = "./data/traces"
+type = "redis"                             # 生产环境推荐 Redis
+base_path = "/app/data/traces"             # 容器内路径
 
-[logging]
-# 生产环境使用 warn 级别，只显示警告和错误
-level = "warn"
-# 输出到文件而不是控制台
-output = "file"
-file_path = "./log/openmanus.log"
-
-# HTTP tool configuration
-[tools.http]
-timeout = 60
-allowed_domains = []
-blocked_domains = ["localhost", "127.0.0.1"]
-
-# File system tool configuration
-[tools.filesystem]
-allowed_paths = ["./workspace", "./data", "./examples"]
-blocked_paths = ["/etc", "/sys", "/proc", "/root"]
-
-# Browser tool configuration
-[tools.browser]
-headless = true
-timeout = 60
-user_agent = "OpenManus-Go/1.0"
-
-# Database configurations (optional)
-[tools.database.mysql]
-dsn = ""
-
-[tools.database.redis]
-addr = "localhost:6379"
-password = ""
+# Redis 存储配置 (生产环境必需)
+[storage.redis]
+addr = "${REDIS_ADDR:redis:6379}"          # 支持环境变量和默认值
+password = "${REDIS_PASSWORD}"             # 使用环境变量
 db = 0
 
+# S3 存储配置 (长期归档可选)
+[storage.s3]
+region = "${AWS_REGION:us-east-1}"
+bucket = "${S3_BUCKET:openmanus-traces-prod}"
+access_key = "${AWS_ACCESS_KEY_ID}"
+secret_key = "${AWS_SECRET_ACCESS_KEY}"
+
+[logging]
+level = "warn"                             # 生产环境只记录警告和错误
+output = "both"                            # 同时输出到控制台和文件
+file_path = "/app/logs/openmanus.log"      # 容器内日志路径
+
+# 工具配置
+[tools.http]
+timeout = 60                               # 生产环境较长超时
+allowed_domains = []                       # 可根据需要限制域名
+blocked_domains = [
+  "localhost", "127.0.0.1", "0.0.0.0",
+  "169.254.169.254"                        # AWS 元数据服务
+]
+
+[tools.filesystem]
+allowed_paths = ["/app/workspace", "/app/data", "/tmp/openmanus"]
+blocked_paths = ["/etc", "/sys", "/proc", "/root", "/var", "/usr", "/boot"]
+
+[tools.browser]
+headless = true                            # 无头模式必需
+timeout = 90                               # 浏览器超时
+user_agent = "OpenManus-Go/1.0"
+
+# 生产数据库配置
+[tools.database.mysql]
+dsn = "${MYSQL_DSN}"                       # 使用环境变量
+
+[tools.database.redis]
+addr = "${REDIS_TOOLS_ADDR:redis:6379}"    # 工具专用 Redis
+password = "${REDIS_TOOLS_PASSWORD}"
+db = 1                                     # 与存储分离
+
+[tools.database.elasticsearch]
+addresses = ["${ELASTICSEARCH_URL:http://elasticsearch:9200}"]
+username = "${ELASTICSEARCH_USERNAME}"
+password = "${ELASTICSEARCH_PASSWORD}"
+
+# 生产 MCP 服务器配置
 [mcp.servers]
+
 [mcp.servers.mcp-stock-helper]
-url = "https://mcp.higress.ai/mcp-stock-helper/cmetri2n6009ia701z634091r"
+url = "${MCP_STOCK_HELPER_URL}"
+
+[mcp.servers.mcp-calendar-holiday-helper]
+url = "${MCP_CALENDAR_HELPER_URL}"
+
+# MCP 服务器认证头配置 (如需要)
+# [mcp.servers.mcp-stock-helper.headers]
+# Authorization = "${MCP_STOCK_HELPER_TOKEN}"
+# [mcp.servers.mcp-calendar-holiday-helper.headers]
+# X-API-Key = "${MCP_CALENDAR_HELPER_KEY}"

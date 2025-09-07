@@ -12,7 +12,6 @@
 #   - Use service names for Redis/MySQL addresses (e.g., "redis:6379")
 
 [llm]
-# 推荐模型配置 (Recommended models)
 model = "deepseek-chat"                    # 或 "gpt-3.5-turbo", "gpt-4", "claude-3-sonnet"
 base_url = "https://api.deepseek.com/v1"   # 或使用环境变量: "${OPENMANUS_LLM_BASE_URL}"
 api_key = "your-api-key-here"              # 🔑 REQUIRED: 必须设置 API key
@@ -28,6 +27,11 @@ reflection_steps = 3                       # 反思步数间隔
 max_retries = 3                            # 最大重试次数
 retry_backoff = "2s"                       # 重试间隔
 
+# 运行流程配置
+[runflow]
+use_data_analysis_agent = false            # 是否使用数据分析智能体
+enable_multi_agent = false                 # 是否启用多智能体协作
+
 [server]
 host = "localhost"                         # Docker: "0.0.0.0"
 port = 8080
@@ -36,79 +40,65 @@ port = 8080
 type = "file"                              # Options: file, memory, redis, s3
 base_path = "./data/traces"                # Docker: "/app/data/traces"
 
-# Redis 存储配置 (推荐用于生产环境)
+# Redis 存储配置 (可选)
 [storage.redis]
 addr = "localhost:6379"                    # Docker: "redis:6379"
 password = ""                              # 生产环境建议设置密码
 db = 0
-max_retries = 3
-dial_timeout = "5s"
-read_timeout = "3s"
-write_timeout = "3s"
+
+# S3 存储配置 (可选)
+[storage.s3]
+region = "us-east-1"
+bucket = "openmanus-traces"
+access_key = ""                            # 使用环境变量: OPENMANUS_S3_ACCESS_KEY
+secret_key = ""                            # 使用环境变量: OPENMANUS_S3_SECRET_KEY
 
 [logging]
 level = "info"                             # debug | info | warn | error
 output = "console"                         # console | file | both
-format = "text"                            # text | json (Docker 推荐 json)
-file_path = "./logs/openmanus.log"
+file_path = "./log/openmanus.log"
 
 # 工具配置
 [tools.http]
-timeout = 45
-max_redirects = 5
-user_agent = "OpenManus-Go/1.0"
+timeout = 45                               # HTTP 请求超时时间 (秒)
 allowed_domains = []                       # 空数组 = 允许所有域名
 blocked_domains = ["localhost", "127.0.0.1", "169.254.169.254"]
 
 [tools.filesystem]
 allowed_paths = ["./workspace", "./data", "./examples"]  # Docker: ["/app/workspace", "/app/data"]
 blocked_paths = ["/etc", "/sys", "/proc", "/root", "/var"]
-max_file_size = "100MB"
 
 [tools.browser]
-headless = true
-timeout = 60
+headless = true                            # 无头浏览器模式
+timeout = 60                               # 浏览器操作超时时间 (秒)
 user_agent = "OpenManus-Go/1.0"
-# Docker Chrome 参数
-chrome_args = [
-  "--no-sandbox",
-  "--disable-dev-shm-usage",
-  "--disable-gpu"
-]
 
-# 数据库配置
+# 数据库配置 (可选)
 [tools.database.mysql]
-dsn = "user:password@tcp(localhost:3306)/dbname"  # Docker: "openmanus:password@tcp(mysql:3306)/openmanus"
-max_open_conns = 10
-max_idle_conns = 5
-conn_max_lifetime = "1h"
+dsn = ""                                   # MySQL 连接字符串，空字符串禁用
 
 [tools.database.redis]
-addr = "localhost:6379"                    # Docker: "redis:6379"
-password = ""
-db = 1                                     # 与存储使用不同的数据库
-pool_size = 10
+addr = "localhost:6379"                    # Redis 地址
+password = ""                              # Redis 密码
+db = 1                                     # Redis 数据库编号
 
-# MCP 服务器配置示例
-[[mcp_servers]]
-name = "stock-helper"
-transport = "sse"
-url = "https://mcp.higress.ai/mcp-stock-helper/your-session-id/sse"
-timeout = 30
-retry_count = 3
+[tools.database.elasticsearch]
+addresses = []                             # ES 地址列表，空数组禁用
+username = ""                              # ES 用户名
+password = ""                              # ES 密码
 
-# 可选配置
-[performance]
-worker_count = 4                           # 工作线程数
-queue_size = 100
-gc_percent = 100
+# MCP 服务器配置
+[mcp.servers]
 
-[monitoring]
-enabled = false                            # 生产环境建议启用
-metrics_port = 9090
-prometheus_path = "/metrics"
+# Higress 股票助手 MCP 服务
+[mcp.servers.mcp-stock-helper]
+url = "https://mcp.higress.ai/mcp-stock-helper/your-session-id"
 
-[security]
-enable_cors = true
-cors_origins = ["*"]                       # 生产环境应限制具体域名
-cors_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+# Higress 日历节假日助手 MCP 服务
+[mcp.servers.mcp-calendar-holiday-helper]
+url = "https://mcp.higress.ai/mcp-calendar-holiday-helper/your-session-id"
+
+# MCP 服务器自定义请求头示例 (如需要)
+# [mcp.servers.mcp-stock-helper.headers]
+# Authorization = "Bearer <TOKEN>"
+# X-API-Key = "<KEY>"
