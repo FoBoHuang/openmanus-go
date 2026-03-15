@@ -98,6 +98,10 @@ url = "https://mcp.higress.ai/mcp-stock-helper/your-session-id"
 [mcp.servers.mcp-calendar-holiday-helper]
 url = "https://mcp.higress.ai/mcp-calendar-holiday-helper/your-session-id"
 
+# APP 推荐服务 MCP 适配器
+[mcp.servers.mcp-recommend-server]
+url = "http://localhost:9100"
+
 # MCP 服务器自定义请求头示例 (如需要)
 # [mcp.servers.mcp-stock-helper.headers]
 # Authorization = "Bearer <TOKEN>"
