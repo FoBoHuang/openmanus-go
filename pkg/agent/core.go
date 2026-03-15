@@ -120,7 +120,7 @@ func NewBaseAgent(llmClient llm.Client, toolRegistry *tool.Registry, config *Con
 	}
 
 	toolExecutor := tool.NewExecutor(toolRegistry, 30*time.Second)
-	memory := NewMemory()
+	memory := NewMemoryWithConfig(DefaultMemoryConfig())
 	planner := NewPlanner(llmClient, toolRegistry, memory)
 	reflector := NewReflector(llmClient, memory)
 
@@ -144,8 +144,12 @@ func NewBaseAgentWithMCP(llmClient llm.Client, toolRegistry *tool.Registry, agen
 		toolRegistry = tool.DefaultRegistry
 	}
 
-	// 创建基础组件
-	memory := NewMemory()
+	// 创建基础组件（使用配置中的 MemoryPath 实现长期记忆持久化）
+	memCfg := DefaultMemoryConfig()
+	if appConfig != nil && appConfig.Agent.MemoryPath != "" {
+		memCfg.LongTermPath = appConfig.Agent.MemoryPath
+	}
+	memory := NewMemoryWithConfig(memCfg)
 	reflector := NewReflector(llmClient, memory)
 
 	// 如果有 MCP 配置，将 MCP 工具集成到统一注册表中
@@ -391,6 +395,9 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 		// 更新观测结果
 		trace.UpdateObservation(observation)
 
+		// 生成步骤摘要，用于轨迹压缩时保留关键信息
+		trace.UpdateSummary(a.summarizeStep(action, observation))
+
 		// 详细记录执行结果并学习
 		logger.Infof("📊 [EXECUTION_COMPLETE] Tool execution finished: %s", action.Name)
 		logger.Infof("⏱️  [EXECUTION_TIME] Latency: %d ms", observation.Latency)
@@ -471,10 +478,13 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 			}
 		}
 
-		// 定期压缩轨迹以节省内存
+		// 定期压缩轨迹以节省内存，同时清理过期短期记忆
 		if len(trace.Steps) > 20 && len(trace.Steps)%10 == 0 {
 			logger.Infof("🗜️  [MEMORY] Compressing trace to maintain efficiency...")
-			a.memory.CompressTrace(15) // 保留最近15步
+			a.memory.CompressTrace(15)
+			if cleaned := a.memory.CleanExpiredShortTerm(); cleaned > 0 {
+				logger.Infof("🧹 [MEMORY] Cleaned %d expired short-term entries", cleaned)
+			}
 		}
 
 		// 检查预算
@@ -484,6 +494,11 @@ func (a *BaseAgent) unifiedLoop(ctx context.Context, goal string) (string, error
 			logger.Warnf("💰 [BUDGET] Execution stopped due to budget limits")
 			break
 		}
+	}
+
+	// 持久化长期记忆
+	if err := a.memory.FlushLongTerm(); err != nil {
+		logger.Warnf("⚠️  [MEMORY] Failed to flush long-term memory: %v", err)
 	}
 
 	// 如果没有明确的结果，生成默认摘要
@@ -598,6 +613,21 @@ func (a *BaseAgent) summarizeObservation(obs *state.Observation) string {
 
 	// 默认总结
 	return "Operation completed"
+}
+
+// summarizeStep 基于 Action 和 Observation 生成一句话步骤摘要
+func (a *BaseAgent) summarizeStep(action state.Action, obs *state.Observation) string {
+	if obs == nil {
+		return fmt.Sprintf("[%s] No observation", action.Name)
+	}
+	if obs.ErrMsg != "" {
+		errPreview := obs.ErrMsg
+		if len(errPreview) > 80 {
+			errPreview = errPreview[:80] + "..."
+		}
+		return fmt.Sprintf("[%s] Failed: %s", action.Name, errPreview)
+	}
+	return fmt.Sprintf("[%s] Success: %s", action.Name, a.summarizeObservation(obs))
 }
 
 // getValueType 获取值的类型描述

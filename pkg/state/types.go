@@ -122,6 +122,13 @@ func (t *Trace) UpdateObservation(obs *Observation) {
 	}
 }
 
+// UpdateSummary 更新最后一个步骤的摘要
+func (t *Trace) UpdateSummary(summary string) {
+	if len(t.Steps) > 0 {
+		t.Steps[len(t.Steps)-1].Summary = summary
+	}
+}
+
 // AddReflection 添加反思记录
 func (t *Trace) AddReflection(result *ReflectionResult) {
 	reflection := ReflectionRecord{

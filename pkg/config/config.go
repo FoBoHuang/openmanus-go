@@ -39,6 +39,7 @@ type AgentConfig struct {
 	ReflectionSteps int    `mapstructure:"reflection_steps"`
 	MaxRetries      int    `mapstructure:"max_retries"`
 	RetryBackoff    string `mapstructure:"retry_backoff"`
+	MemoryPath      string `mapstructure:"memory_path"`
 }
 
 // RunFlowConfig 流程配置
@@ -143,6 +144,7 @@ func DefaultConfig() *Config {
 			ReflectionSteps: 3,
 			MaxRetries:      2,
 			RetryBackoff:    "1s",
+			MemoryPath:      "./data/memory/long_term.json",
 		},
 		RunFlow: RunFlowConfig{
 			UseDataAnalysisAgent: false,

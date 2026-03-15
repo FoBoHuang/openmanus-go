@@ -490,9 +490,9 @@ func (p *Planner) analyzeFailurePatterns(failedSteps []state.Step) []string {
 		}
 	}
 
-	// 存储失败模式到长期记忆
+	// 存储失败模式到长期记忆（高 importance，用于后续规避）
 	if p.memory != nil {
-		p.memory.SetLongTerm("failure_patterns", actionFailures)
+		p.memory.SetLongTermWithImportance("failure_patterns", actionFailures, "failure_analysis", 0.9)
 	}
 
 	return patterns
@@ -521,9 +521,9 @@ func (p *Planner) analyzeSuccessPatterns(successfulSteps []state.Step) []string 
 		}
 	}
 
-	// 存储成功模式到长期记忆
+	// 存储成功模式到长期记忆（中等 importance，用于后续参考）
 	if p.memory != nil {
-		p.memory.SetLongTerm("success_patterns", actionSuccesses)
+		p.memory.SetLongTermWithImportance("success_patterns", actionSuccesses, "success_analysis", 0.6)
 	}
 
 	return patterns
